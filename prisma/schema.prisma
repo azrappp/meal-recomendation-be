@@ -1,0 +1,163 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Client {
+  clientId   Int      @id @default(autoincrement()) @map("client_id")
+  fullName   String   @map("full_name")
+  age        Int
+  gender     String
+  occupation String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  screeningSessions ScreeningSession[]
+
+  @@map("clients")
+}
+
+model ScreeningSession {
+  screeningId     Int      @id @default(autoincrement()) @map("screening_id")
+  clientId        Int      @map("client_id")
+  screeningDate   DateTime @map("screening_date") @db.Date
+  screeningStatus String   @map("screening_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  client Client @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+
+  anthropometryAssessment     AnthropometryAssessment?
+  biochemicalAssessment       BiochemicalAssessment?
+  clinicalAssessment          ClinicalAssessment?
+  medicationAssessment        MedicationAssessment?
+  physicalActivityAssessment  PhysicalActivityAssessment?
+  screeningResult             ScreeningResult?
+  energyRequirement           EnergyRequirement?
+
+  @@map("screening_sessions")
+}
+
+model AnthropometryAssessment {
+  anthropometryId       Int     @id @default(autoincrement()) @map("anthropometry_id")
+  screeningId           Int     @unique @map("screening_id")
+  weightKg              Float   @map("weight_kg")
+  heightCm              Float   @map("height_cm")
+  bmi                   Float
+  waistCircumferenceCm  Float?  @map("waist_circumference_cm")
+  bmiStatus             String? @map("bmi_status")
+  waistStatus           String? @map("waist_status")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("anthropometry_assessments")
+}
+
+model BiochemicalAssessment {
+  biochemicalId           Int    @id @default(autoincrement()) @map("biochemical_id")
+  screeningId             Int    @unique @map("screening_id")
+  fastingGlucoseMgDl      Float? @map("fasting_glucose_mg_dl")
+  postprandialGlucoseMgDl Float? @map("postprandial_glucose_mg_dl")
+  randomGlucoseMgDl       Float? @map("random_glucose_mg_dl")
+  hba1cPercent            Float? @map("hba1c_percent")
+  glucoseStatus           String? @map("glucose_status")
+  hba1cStatus             String? @map("hba1c_status")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("biochemical_assessments")
+}
+
+model ClinicalAssessment {
+  clinicalId              Int     @id @default(autoincrement()) @map("clinical_id")
+  screeningId             Int     @unique @map("screening_id")
+  systolicBp              Float?  @map("systolic_bp")
+  diastolicBp             Float?  @map("diastolic_bp")
+  bloodPressureStatus     String? @map("blood_pressure_status")
+
+  headache                Boolean @default(false)
+  chestPain               Boolean @default(false) @map("chest_pain")
+  visualDisturbance       Boolean @default(false) @map("visual_disturbance")
+  frequentUrinationNight  Boolean @default(false) @map("frequent_urination_night")
+  shortnessOfBreath       Boolean @default(false) @map("shortness_of_breath")
+  polyphagia              Boolean @default(false)
+  dizziness               Boolean @default(false)
+  polydipsia              Boolean @default(false)
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("clinical_assessments")
+}
+
+model MedicationAssessment {
+  medicationAssessmentId Int     @id @default(autoincrement()) @map("medication_assessment_id")
+  screeningId            Int     @unique @map("screening_id")
+
+  usesHypertensionDrug   Boolean @default(false) @map("uses_hypertension_drug")
+  usesOralAntidiabetic   Boolean @default(false) @map("uses_oral_antidiabetic")
+  usesInsulin            Boolean @default(false) @map("uses_insulin")
+
+  hypertensionDrugName   String? @map("hypertension_drug_name")
+  antidiabeticDrugName   String? @map("antidiabetic_drug_name")
+  insulinAlertStatus     String? @map("insulin_alert_status")
+  medicationNotes        String? @map("medication_notes")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("medication_assessments")
+}
+
+model PhysicalActivityAssessment {
+  activityAssessmentId Int     @id @default(autoincrement()) @map("activity_assessment_id")
+  screeningId          Int     @unique @map("screening_id")
+  activityLevel        String  @map("activity_level")
+  activityScore        Float?  @map("activity_score")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("physical_activity_assessments")
+}
+
+model ScreeningResult {
+  resultId               Int      @id @default(autoincrement()) @map("result_id")
+  screeningId            Int      @unique @map("screening_id")
+
+  diabetesStatus         String?  @map("diabetes_status")
+  hypertensionStatus     String?  @map("hypertension_status")
+  obesityStatus          String?  @map("obesity_status")
+  finalScreeningCategory String?  @map("final_screening_category")
+
+  referralRequired       Boolean  @default(false) @map("referral_required")
+  referralReason         String?  @map("referral_reason")
+  screeningSummary       String?  @map("screening_summary") @db.Text
+
+  generatedAt            DateTime @default(now()) @map("generated_at")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("screening_results")
+}
+
+model EnergyRequirement {
+  energyRequirementId Int      @id @default(autoincrement()) @map("energy_requirement_id")
+  screeningId         Int      @unique @map("screening_id")
+
+  dailyEnergyKcal     Float    @map("daily_energy_kcal")
+  carbohydrateGram    Float    @map("carbohydrate_gram")
+  fatGram             Float    @map("fat_gram")
+  proteinGram         Float    @map("protein_gram")
+
+  formulaUsed         String?  @map("formula_used")
+  generatedAt         DateTime @default(now()) @map("generated_at")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+
+  @@map("energy_requirements")
+}

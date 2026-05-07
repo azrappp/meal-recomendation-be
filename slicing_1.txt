@@ -1,0 +1,222 @@
+Summary
+1. POST /api/screening/identity
+
+2. POST /api/screening/:clientId/anthropometry
+
+3. GET  /api/screening/:screeningId/nutrition-status
+
+4. POST /api/screening/:screeningId/biochemical
+
+5. GET  /api/screening/:screeningId/blood-glucose-status
+
+6. POST /api/screening/:screeningId/clinical
+
+7. GET  /api/screening/:screeningId/clinical-analysis
+
+8. POST /api/screening/:screeningId/medication
+
+9. POST /api/screening/:screeningId/physical-activity
+
+10. GET  /api/screening/:screeningId/energy-requirement
+
+POST http://localhost:3000/api/screening/identity
+{
+  "fullName": "John Doe",
+  "age": 23,
+  "gender": "laki-laki",
+  "occupation": "Mahasiswa"
+}
+
+
+POST http://localhost:3000/api/screening/1/anthropometry
+
+{
+  "weightKg": 50,
+  "heightCm": 168,
+  "waistCircumferenceCm": 58
+}
+
+{
+  "message": "Anthropometry data saved successfully",
+  "data": {
+    "screeningId": 1,
+    "clientId": 1,
+    "screeningDate": "2026-05-07T...",
+    "screeningStatus": "anthropometry_completed",
+    "anthropometryAssessment": {
+      "anthropometryId": 1,
+      "screeningId": 1,
+      "weightKg": 50,
+      "heightCm": 168,
+      "bmi": 17.72,
+      "waistCircumferenceCm": 58,
+      "bmiStatus": "Underweight",
+      "waistStatus": "Normal"
+    }
+  }
+}
+
+GET /api/screening/:screeningId/nutrition-status
+
+{
+  "message": "Nutrition status retrieved successfully",
+  "data": {
+    "bmi": 17.72,
+    "bmiStatus": "Underweight",
+    "heightCm": 168,
+    "weightKg": 50,
+    "waistCircumferenceCm": 58,
+    "waistStatus": "Normal"
+  }
+}
+
+POST /api/screening/:screeningId/biochemical
+
+{
+  "fastingGlucoseMgDl": 88,
+  "postprandialGlucoseMgDl": 110,
+  "randomGlucoseMgDl": 95,
+  "hba1cPercent": 5.2
+}
+
+{
+  "message": "Biochemical data saved successfully",
+  "data": {
+    "biochemicalId": 1,
+    "screeningId": 1,
+    "fastingGlucoseMgDl": 88,
+    "postprandialGlucoseMgDl": 110,
+    "randomGlucoseMgDl": 95,
+    "hba1cPercent": 5.2,
+    "glucoseStatus": "Normal",
+    "hba1cStatus": "Normal"
+  }
+}
+
+GET /api/screening/:screeningId/blood-glucose-status
+
+{
+  "message": "Blood glucose status retrieved successfully",
+  "data": {
+    "diagnosis": "Normal",
+    "glucoseStatus": "Normal",
+    "hba1cStatus": "Normal",
+    "fastingGlucoseMgDl": 88,
+    "postprandialGlucoseMgDl": 110,
+    "randomGlucoseMgDl": 95,
+    "hba1cPercent": 5.2
+  }
+}
+
+POST /api/screening/:screeningId/clinical
+
+{
+  "systolicBp": 120,
+  "diastolicBp": 80,
+  "headache": true,
+  "chestPain": false,
+  "visualDisturbance": false,
+  "frequentUrinationNight": false,
+  "shortnessOfBreath": false,
+  "polyphagia": false,
+  "dizziness": false,
+  "polydipsia": false
+}
+
+GET /api/screening/:screeningId/clinical-analysis
+
+{
+  "message": "Clinical analysis retrieved successfully",
+  "data": {
+    "hypertension": {
+      "diagnosis": "Normal",
+      "bloodPressureStatus": "Normal",
+      "systolicBp": 120,
+      "diastolicBp": 80
+    },
+    "diabetesMellitus": {
+      "diagnosis": "Normal",
+      "glucoseStatus": "Normal",
+      "hba1cStatus": "Normal"
+    }
+  }
+}
+
+{
+  "message": "Clinical analysis retrieved successfully",
+  "data": {
+    "hypertension": {
+      "diagnosis": "Normal",
+      "bloodPressureStatus": "Normal",
+      "systolicBp": 120,
+      "diastolicBp": 80
+    },
+    "diabetesMellitus": {
+      "diagnosis": "Normal",
+      "glucoseStatus": "Normal",
+      "hba1cStatus": "Normal"
+    }
+  }
+}
+
+POST /api/screening/:screeningId/medication
+
+{
+  "hypertensionDrugName": "Amlodipine",
+  "antidiabeticDrugName": "Metformin"
+}
+
+{
+  "message": "Medication data saved successfully",
+  "data": {
+    "medicationAssessmentId": 1,
+    "screeningId": 1,
+    "usesHypertensionDrug": true,
+    "usesOralAntidiabetic": true,
+    "usesInsulin": false,
+    "hypertensionDrugName": "Amlodipine",
+    "antidiabeticDrugName": "Metformin",
+    "insulinAlertStatus": "No insulin referral alert",
+    "medicationNotes": null
+  }
+}
+
+POST /api/screening/:screeningId/physical-activity
+
+{
+  "activityLevel": "Sangat Rendah"
+}
+
+{
+  "message": "Physical activity and energy requirement saved successfully",
+  "data": {
+    "physicalActivity": {
+      "activityAssessmentId": 1,
+      "screeningId": 1,
+      "activityLevel": "Sangat Rendah",
+      "activityScore": 0.2
+    },
+    "energyRequirement": {
+      "energyRequirementId": 1,
+      "screeningId": 1,
+      "dailyEnergyKcal": 1850,
+      "carbohydrateGram": 198,
+      "fatGram": 52,
+      "proteinGram": 122,
+      "formulaUsed": "Mifflin-St Jeor + TEF 10% + activity factor"
+    }
+  }
+}
+
+GET /api/screening/:screeningId/energy-requirement
+
+{
+  "message": "Energy requirement retrieved successfully",
+  "data": {
+    "dailyEnergyKcal": 1850,
+    "carbohydrateGram": 198,
+    "fatGram": 52,
+    "proteinGram": 122,
+    "formulaUsed": "Mifflin-St Jeor + TEF 10% + activity factor"
+  }
+}
