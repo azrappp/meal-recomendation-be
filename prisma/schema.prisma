@@ -137,7 +137,6 @@ model ScreeningResult {
   referralRequired       Boolean  @default(false) @map("referral_required")
   referralReason         String?  @map("referral_reason")
   screeningSummary       String?  @map("screening_summary") @db.Text
-
   generatedAt            DateTime @default(now()) @map("generated_at")
 
   screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
@@ -154,7 +153,6 @@ model EnergyRequirement {
   fatGram             Float    @map("fat_gram")
   proteinGram         Float    @map("protein_gram")
 
-  formulaUsed         String?  @map("formula_used")
   generatedAt         DateTime @default(now()) @map("generated_at")
 
   screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)

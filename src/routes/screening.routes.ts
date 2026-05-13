@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
+import { calculateEnergyRequirement } from "../services/energy.service";
 
 export const screeningRoutes = Router();
 
@@ -40,9 +41,15 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
 
     const { weightKg, heightCm, waistCircumferenceCm } = req.body;
 
-    if (!clientId || !weightKg || !heightCm) {
+    if (!Number.isInteger(clientId) || clientId <= 0) {
       return res.status(400).json({
-        message: "clientId, weightKg, and heightCm are required",
+        message: "Valid clientId is required in URL parameter",
+      });
+    }
+
+    if (weightKg === undefined || heightCm === undefined) {
+      return res.status(400).json({
+        message: "weightKg and heightCm are required",
       });
     }
 
@@ -117,6 +124,20 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
       },
     });
 
+    const obesityStatus =
+      bmiStatus === "Obesity" || waistStatus === "High Risk"
+        ? "Obesity"
+        : "Normal";
+    await prisma.screeningResult.upsert({
+      where: { screeningId: screening.screeningId },
+      update: {
+        obesityStatus,
+      },
+      create: {
+        screeningId: screening.screeningId,
+        obesityStatus,
+      },
+    });
     return res.status(201).json({
       message: "Anthropometry data saved successfully",
       data: screening,
@@ -611,6 +632,7 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
       include: {
         client: true,
         anthropometryAssessment: true,
+        screeningResult: true,
       },
     });
 
@@ -627,68 +649,36 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
       });
     }
 
+    if (!screening.screeningResult) {
+      return res.status(400).json({
+        message: "Screening result is required before calculating energy needs",
+      });
+    }
+
     const client = screening.client;
     const anthropometry = screening.anthropometryAssessment;
+    const result = screening.screeningResult;
 
-    const weight = anthropometry.weightKg;
-    const height = anthropometry.heightCm;
-    const age = client.age;
-    const gender = client.gender.toLowerCase();
-
-    /**
-     * Activity score.
-     * You can adjust this based on your application logic.
-     */
-    let activityScore = 0.2;
-
-    if (activityLevel === "Sangat Rendah") {
-      activityScore = 0.2;
-    } else if (activityLevel === "Rendah") {
-      activityScore = 0.3;
-    } else if (activityLevel === "Sedang") {
-      activityScore = 0.4;
-    } else if (activityLevel === "Tinggi") {
-      activityScore = 0.5;
-    }
-
-    /**
-     * Mifflin-St Jeor Equation
-     */
-    let rmr = 0;
-
-    if (gender === "laki-laki" || gender === "male") {
-      rmr = 10 * weight + 6.25 * height - 5 * age + 5;
-    } else {
-      rmr = 10 * weight + 6.25 * height - 5 * age - 161;
-    }
-
-    /**
-     * Total Energy Expenditure:
-     * RMR + TEF 10% + physical activity component
-     */
-    const tef = 0.1 * rmr;
-    const physicalActivityEnergy = activityScore * rmr;
-
-    const dailyEnergyKcal = Math.round(rmr + tef + physicalActivityEnergy);
-
-    /**
-     * Macronutrient distribution.
-     * This can be adjusted later based on dietitian rule.
-     */
-    const carbohydrateGram = Math.round((0.43 * dailyEnergyKcal) / 4);
-    const fatGram = Math.round((0.25 * dailyEnergyKcal) / 9);
-    const proteinGram = Math.round((0.26 * dailyEnergyKcal) / 4);
+    const { dailyEnergyKcal, carbohydrateGram, fatGram, proteinGram } =
+      calculateEnergyRequirement({
+        weight: anthropometry.weightKg,
+        height: anthropometry.heightCm,
+        age: client.age,
+        gender: client.gender,
+        activityLevel,
+        diabetesStatus: result.diabetesStatus,
+        hypertensionStatus: result.hypertensionStatus,
+        obesityStatus: result.obesityStatus,
+      });
 
     const physicalActivity = await prisma.physicalActivityAssessment.upsert({
       where: { screeningId },
       update: {
         activityLevel,
-        activityScore,
       },
       create: {
         screeningId,
         activityLevel,
-        activityScore,
       },
     });
 
@@ -699,7 +689,6 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
         carbohydrateGram,
         fatGram,
         proteinGram,
-        formulaUsed: "Mifflin-St Jeor + TEF 10% + activity factor",
       },
       create: {
         screeningId,
@@ -707,7 +696,6 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
         carbohydrateGram,
         fatGram,
         proteinGram,
-        formulaUsed: "Mifflin-St Jeor + TEF 10% + activity factor",
       },
     });
 
@@ -727,8 +715,10 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
     return res.status(500).json({
       message: "Failed to save physical activity and energy requirement",
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -754,7 +744,6 @@ screeningRoutes.get("/:screeningId/energy-requirement", async (req, res) => {
         carbohydrateGram: energyRequirement.carbohydrateGram,
         fatGram: energyRequirement.fatGram,
         proteinGram: energyRequirement.proteinGram,
-        formulaUsed: energyRequirement.formulaUsed,
       },
     });
   } catch (error) {
