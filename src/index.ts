@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import { clientRoutes } from "./routes/client.routes";
 import { screeningRoutes } from "./routes/screening.routes";
+import { mealRecommendationRoutes } from "./routes/meal.routes";
+
 const app = express();
 
 app.use(cors());
@@ -14,6 +16,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/clients", clientRoutes);
 app.use("/api/screening", screeningRoutes);
+app.use("/api/meal-recommendations", mealRecommendationRoutes);
 
 const PORT = process.env.PORT || 3000;
 
