@@ -33,7 +33,7 @@ model ScreeningSession {
   createdAt       DateTime @default(now()) @map("created_at")
 
   client Client @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
-
+ menuRecommendations MenuRecommendation[]
   anthropometryAssessment     AnthropometryAssessment?
   biochemicalAssessment       BiochemicalAssessment?
   clinicalAssessment          ClinicalAssessment?
@@ -158,4 +158,69 @@ model EnergyRequirement {
   screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
 
   @@map("energy_requirements")
+}
+
+model MenuRecommendation {
+  menuRecommendationId Int      @id @default(autoincrement()) @map("menu_recommendation_id")
+  screeningId          Int      @map("screening_id")
+
+  dietType             String   @map("diet_type")
+  targetEnergyKcal     Float    @map("target_energy_kcal")
+  targetCarbohydrateG  Float    @map("target_carbohydrate_g")
+  targetProteinG       Float    @map("target_protein_g")
+  targetFatG           Float    @map("target_fat_g")
+  sodiumMaxMg          Float?   @map("sodium_max_mg")
+  fiberMinG            Float?   @map("fiber_min_g")
+
+  totalDays            Int      @default(7) @map("total_days")
+  generationStatus     String   @default("SUCCESS") @map("generation_status")
+  generatedAt          DateTime @default(now()) @map("generated_at")
+
+  screeningSession ScreeningSession @relation(fields: [screeningId], references: [screeningId], onDelete: Cascade)
+  days             MenuRecommendationDay[]
+
+  @@map("menu_recommendations")
+}
+
+model MenuRecommendationDay {
+  menuDayId            Int   @id @default(autoincrement()) @map("menu_day_id")
+  menuRecommendationId Int   @map("menu_recommendation_id")
+  dayNumber            Int   @map("day_number")
+
+  energyKcal           Float @map("energy_kcal")
+  proteinG             Float @map("protein_g")
+  fatG                 Float @map("fat_g")
+  carbG                Float @map("carb_g")
+  sodiumMg             Float @map("sodium_mg")
+  fiberG               Float @map("fiber_g")
+
+  menuRecommendation MenuRecommendation @relation(fields: [menuRecommendationId], references: [menuRecommendationId], onDelete: Cascade)
+  items              MenuRecommendationItem[]
+
+  @@unique([menuRecommendationId, dayNumber])
+  @@map("menu_recommendation_days")
+}
+
+model MenuRecommendationItem {
+  menuItemId Int @id @default(autoincrement()) @map("menu_item_id")
+  menuDayId  Int @map("menu_day_id")
+
+  mealTime     String @map("meal_time")
+  foodName     String @map("food_name")
+  categoryCode String @map("category_code")
+
+  portion Float
+  urt     String?
+  gram    Float?
+
+  energyKcal Float @map("energy_kcal")
+  proteinG   Float @map("protein_g")
+  fatG       Float @map("fat_g")
+  carbG      Float @map("carb_g")
+  sodiumMg   Float @map("sodium_mg")
+  fiberG     Float @map("fiber_g")
+
+  menuDay MenuRecommendationDay @relation(fields: [menuDayId], references: [menuDayId], onDelete: Cascade)
+
+  @@map("menu_recommendation_items")
 }

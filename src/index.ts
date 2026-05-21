@@ -16,7 +16,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/clients", clientRoutes);
 app.use("/api/screening", screeningRoutes);
-app.use("/api/meal-recommendations", mealRecommendationRoutes);
+app.use("/api/meal", mealRecommendationRoutes);
 
 const PORT = process.env.PORT || 3000;
 
