@@ -193,6 +193,7 @@ function buildAllowedFoodNamesForDay(day: number): string[] {
     // LN
     "Kembang tahu",
     "Oncom",
+    "Tempe kedelai, mentah",
 
     // SS
     "Susu kambing, segar",
@@ -205,6 +206,8 @@ function buildAllowedFoodNamesForDay(day: number): string[] {
     "Minyak kelapa",
     "Minyak zaitun",
     "Mentega",
+    //G
+    "Gula kelapa",
   ];
 
   const lhRotation = [
@@ -549,19 +552,15 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
     const generatedMenus: any[] = [];
 
     for (let day = 1; day <= 7; day++) {
-      const allowedFoodNames = buildAllowedFoodNamesForDay(day);
+      const rotatedAllowedFoodNames = buildAllowedFoodNamesForDay(day);
 
-      const excludedFoodNames = buildExcludedFoodNames(
-        weeklyHistory.categoryUsedFoodCounts,
-      );
+      const userExcludedFoods: string[] = [];
 
-      const dailyPayload = {
+      const rotatedPayload = {
         ...fastApiPayload,
         day_number: day,
-        allowed_food_names: allowedFoodNames,
-        excluded_food_names: excludedFoodNames,
-        used_food_counts: weeklyHistory.usedFoodCounts,
-        weekly_rules: WEEKLY_RULES,
+        allowed_food_names: rotatedAllowedFoodNames,
+        excluded_food_names: userExcludedFoods,
       };
 
       const fastApiResponse = await fetch(
@@ -571,7 +570,7 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(dailyPayload),
+          body: JSON.stringify(rotatedPayload),
         },
       );
 
@@ -581,7 +580,6 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
         return res.status(422).json({
           message: `FastAPI failed to generate menu recommendation for day ${day}`,
           day,
-          dailyPayload,
           detail: responseBody,
         });
       }
