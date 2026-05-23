@@ -26,12 +26,6 @@ const FASTAPI_BASE_URL =
  * Get required data for FastAPI meal recommendation
  * This endpoint only checks and previews the payload.
  */
-
-const weeklyHistory = {
-  usedFoodCounts: {} as Record<string, number>,
-  categoryUsedFoodCounts: {} as Record<string, Record<string, number>>,
-};
-
 type SavedMenuItem = {
   mealTime: string;
   foodName: string;
@@ -40,9 +34,9 @@ type SavedMenuItem = {
   urt: string | null;
   gram: number | null;
 };
-
 type SavedMenuDay = {
   dayNumber: number;
+  menuDate: Date;
   energyKcal: number;
   proteinG: number;
   fatG: number;
@@ -57,6 +51,7 @@ type SavedWeeklyMenu = {
   targetEnergyKcal: number;
   totalDays: number;
   generatedAt: Date;
+  startDate: Date;
   days: SavedMenuDay[];
 };
 
@@ -75,6 +70,7 @@ type SimpleMeal = {
 
 type SimpleWeeklyMenuDay = {
   dayNumber: number;
+  menuDate: Date;
   summary: {
     energyKcal: number;
     proteinG: number;
@@ -91,6 +87,7 @@ type SimpleWeeklyMenu = {
   targetEnergyKcal: number;
   totalDays: number;
   generatedAt: Date;
+  startDate: Date;
   days: SimpleWeeklyMenuDay[];
 };
 
@@ -114,9 +111,11 @@ function simplifyWeeklyMenu(
     targetEnergyKcal: savedWeeklyMenu.targetEnergyKcal,
     totalDays: savedWeeklyMenu.totalDays,
     generatedAt: savedWeeklyMenu.generatedAt,
+    startDate: savedWeeklyMenu.startDate,
 
     days: savedWeeklyMenu.days.map((day) => ({
       dayNumber: day.dayNumber,
+      menuDate: day.menuDate,
       summary: {
         energyKcal: day.energyKcal,
         proteinG: day.proteinG,
@@ -304,6 +303,15 @@ mealRecommendationRoutes.get("/:screeningId", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
 
+    const { startDate } = req.body as { startDate?: string };
+
+    const baseDate = startDate ? new Date(startDate) : new Date();
+
+    if (Number.isNaN(baseDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid startDate format. Use YYYY-MM-DD.",
+      });
+    }
     if (!Number.isInteger(screeningId) || screeningId <= 0) {
       return res.status(400).json({
         message: "Valid screeningId is required",
@@ -396,6 +404,14 @@ mealRecommendationRoutes.get("/:screeningId", async (req, res) => {
 mealRecommendationRoutes.post("/:screeningId/menu", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
+    const { startDate } = req.body as { startDate?: string };
+    const baseDate = startDate ? new Date(startDate) : new Date();
+
+    if (Number.isNaN(baseDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid startDate format. Use YYYY-MM-DD.",
+      });
+    }
 
     if (!Number.isInteger(screeningId) || screeningId <= 0) {
       return res.status(400).json({
@@ -469,6 +485,7 @@ mealRecommendationRoutes.post("/:screeningId/menu", async (req, res) => {
       dietType,
       fastApiPayload,
       generatedMenu: responseBody,
+      startDate: baseDate,
     });
 
     return res.status(201).json({
@@ -491,6 +508,16 @@ mealRecommendationRoutes.post("/:screeningId/menu", async (req, res) => {
 mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
+
+    const { startDate } = (req.body ?? {}) as { startDate?: string };
+
+    const baseDate = startDate ? new Date(startDate) : new Date();
+
+    if (Number.isNaN(baseDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid startDate format. Use YYYY-MM-DD.",
+      });
+    }
 
     if (!Number.isInteger(screeningId) || screeningId <= 0) {
       return res.status(400).json({
@@ -583,10 +610,7 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
           detail: responseBody,
         });
       }
-
       generatedMenus.push(responseBody);
-
-      // Update history after each successful daily menu
       updateWeeklyHistory(weeklyHistory, responseBody);
     }
 
@@ -595,6 +619,7 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
       dietType,
       fastApiPayload,
       generatedMenus,
+      startDate: baseDate,
     });
 
     return res.status(201).json({
@@ -603,7 +628,7 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
       dietType,
       fastApiPayload,
       weeklyHistory,
-      data: simplifyWeeklyMenu(savedWeeklyMenu as SavedWeeklyMenu),
+      data: simplifyWeeklyMenu(savedWeeklyMenu),
     });
   } catch (error: unknown) {
     console.error(error);
@@ -712,8 +737,10 @@ async function saveGeneratedMenu(params: {
   dietType: string;
   fastApiPayload: FastApiMealPayload;
   generatedMenu: any;
+  startDate: Date;
 }) {
-  const { screeningId, dietType, fastApiPayload, generatedMenu } = params;
+  const { screeningId, dietType, fastApiPayload, generatedMenu, startDate } =
+    params;
 
   return prisma.menuRecommendation.create({
     data: {
@@ -732,6 +759,7 @@ async function saveGeneratedMenu(params: {
         create: [
           {
             dayNumber: 1,
+            menuDate: startDate,
             energyKcal: generatedMenu.daily_total.energy_kcal,
             proteinG: generatedMenu.daily_total.protein_g,
             fatG: generatedMenu.daily_total.fat_g,
@@ -824,10 +852,12 @@ async function saveGeneratedWeeklyMenu(params: {
   dietType: string;
   fastApiPayload: FastApiMealPayload;
   generatedMenus: any[];
+  startDate: Date;
 }) {
-  const { screeningId, dietType, fastApiPayload, generatedMenus } = params;
+  const { screeningId, dietType, fastApiPayload, generatedMenus, startDate } =
+    params;
 
-  return prisma.menuRecommendation.create({
+  const menuRecommendation = await prisma.menuRecommendation.create({
     data: {
       screeningId,
       dietType,
@@ -843,6 +873,7 @@ async function saveGeneratedWeeklyMenu(params: {
       days: {
         create: generatedMenus.map((menu, index) => ({
           dayNumber: index + 1,
+          menuDate: addDays(startDate, index),
           energyKcal: menu.daily_total.energy_kcal,
           proteinG: menu.daily_total.protein_g,
           fatG: menu.daily_total.fat_g,
@@ -882,4 +913,621 @@ async function saveGeneratedWeeklyMenu(params: {
       },
     },
   });
+
+  return {
+    ...menuRecommendation,
+    startDate,
+  };
 }
+
+mealRecommendationRoutes.get(
+  "/menu/:menuRecommendationId",
+  async (req, res) => {
+    try {
+      const menuRecommendationId = Number(req.params.menuRecommendationId);
+
+      if (
+        !Number.isInteger(menuRecommendationId) ||
+        menuRecommendationId <= 0
+      ) {
+        return res.status(400).json({
+          message: "Valid menuRecommendationId is required",
+        });
+      }
+
+      const menu = await prisma.menuRecommendation.findUnique({
+        where: {
+          menuRecommendationId,
+        },
+        include: {
+          days: {
+            orderBy: {
+              dayNumber: "asc",
+            },
+            include: {
+              items: {
+                orderBy: {
+                  mealTime: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!menu) {
+        return res.status(404).json({
+          message: "Menu recommendation not found",
+        });
+      }
+
+      return res.status(200).json({
+        message: "Menu recommendation retrieved successfully",
+        data: menu,
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to retrieve menu recommendation",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
+
+type UpdateMenuItemBody = {
+  mealTime?: string;
+  foodName?: string;
+  categoryCode?: string;
+  portion?: number;
+  urt?: string | null;
+  gram?: number | null;
+  energyKcal?: number;
+  proteinG?: number;
+  fatG?: number;
+  carbG?: number;
+  sodiumMg?: number;
+  fiberG?: number;
+};
+
+mealRecommendationRoutes.patch("/items/:menuItemId", async (req, res) => {
+  try {
+    const menuItemId = Number(req.params.menuItemId);
+    const body = req.body as UpdateMenuItemBody;
+
+    if (!Number.isInteger(menuItemId) || menuItemId <= 0) {
+      return res.status(400).json({
+        message: "Valid menuItemId is required",
+      });
+    }
+
+    const existingItem = await prisma.menuRecommendationItem.findUnique({
+      where: {
+        menuItemId,
+      },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({
+        message: "Menu item not found",
+      });
+    }
+
+    const updatedItem = await prisma.menuRecommendationItem.update({
+      where: {
+        menuItemId,
+      },
+      data: {
+        ...(body.mealTime !== undefined && { mealTime: body.mealTime }),
+        ...(body.foodName !== undefined && { foodName: body.foodName }),
+        ...(body.categoryCode !== undefined && {
+          categoryCode: body.categoryCode,
+        }),
+        ...(body.portion !== undefined && { portion: body.portion }),
+        ...(body.urt !== undefined && { urt: body.urt }),
+        ...(body.gram !== undefined && { gram: body.gram }),
+        ...(body.energyKcal !== undefined && { energyKcal: body.energyKcal }),
+        ...(body.proteinG !== undefined && { proteinG: body.proteinG }),
+        ...(body.fatG !== undefined && { fatG: body.fatG }),
+        ...(body.carbG !== undefined && { carbG: body.carbG }),
+        ...(body.sodiumMg !== undefined && { sodiumMg: body.sodiumMg }),
+        ...(body.fiberG !== undefined && { fiberG: body.fiberG }),
+      },
+    });
+
+    await recalculateMenuDaySummary(existingItem.menuDayId);
+
+    return res.status(200).json({
+      message: "Menu item updated successfully",
+      data: updatedItem,
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to update menu item",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+mealRecommendationRoutes.delete("/items/:menuItemId", async (req, res) => {
+  try {
+    const menuItemId = Number(req.params.menuItemId);
+
+    if (!Number.isInteger(menuItemId) || menuItemId <= 0) {
+      return res.status(400).json({
+        message: "Valid menuItemId is required",
+      });
+    }
+
+    const existingItem = await prisma.menuRecommendationItem.findUnique({
+      where: {
+        menuItemId,
+      },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({
+        message: "Menu item not found",
+      });
+    }
+
+    const menuDayId = existingItem.menuDayId;
+
+    await prisma.menuRecommendationItem.delete({
+      where: {
+        menuItemId,
+      },
+    });
+
+    await recalculateMenuDaySummary(menuDayId);
+
+    return res.status(200).json({
+      message: "Menu item deleted successfully",
+      deletedMenuItemId: menuItemId,
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to delete menu item",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+mealRecommendationRoutes.delete(
+  "/menu/:menuRecommendationId",
+  async (req, res) => {
+    try {
+      const menuRecommendationId = Number(req.params.menuRecommendationId);
+
+      if (
+        !Number.isInteger(menuRecommendationId) ||
+        menuRecommendationId <= 0
+      ) {
+        return res.status(400).json({
+          message: "Valid menuRecommendationId is required",
+        });
+      }
+
+      const existingMenu = await prisma.menuRecommendation.findUnique({
+        where: {
+          menuRecommendationId,
+        },
+      });
+
+      if (!existingMenu) {
+        return res.status(404).json({
+          message: "Menu recommendation not found",
+        });
+      }
+
+      await prisma.menuRecommendation.delete({
+        where: {
+          menuRecommendationId,
+        },
+      });
+
+      return res.status(200).json({
+        message: "Menu recommendation deleted successfully",
+        deletedMenuRecommendationId: menuRecommendationId,
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to delete menu recommendation",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
+
+async function recalculateMenuDaySummary(menuDayId: number) {
+  const items = await prisma.menuRecommendationItem.findMany({
+    where: {
+      menuDayId,
+    },
+  });
+
+  const totals = items.reduce(
+    (acc, item) => {
+      acc.energyKcal += item.energyKcal;
+      acc.proteinG += item.proteinG;
+      acc.fatG += item.fatG;
+      acc.carbG += item.carbG;
+      acc.sodiumMg += item.sodiumMg;
+      acc.fiberG += item.fiberG;
+
+      return acc;
+    },
+    {
+      energyKcal: 0,
+      proteinG: 0,
+      fatG: 0,
+      carbG: 0,
+      sodiumMg: 0,
+      fiberG: 0,
+    },
+  );
+
+  return prisma.menuRecommendationDay.update({
+    where: {
+      menuDayId,
+    },
+    data: {
+      energyKcal: Number(totals.energyKcal.toFixed(2)),
+      proteinG: Number(totals.proteinG.toFixed(2)),
+      fatG: Number(totals.fatG.toFixed(2)),
+      carbG: Number(totals.carbG.toFixed(2)),
+      sodiumMg: Number(totals.sodiumMg.toFixed(2)),
+      fiberG: Number(totals.fiberG.toFixed(2)),
+    },
+  });
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+type MarkMenuItemEatenBody = {
+  isEaten: boolean;
+  userNote?: string | null;
+};
+
+mealRecommendationRoutes.patch("/items/:menuItemId/eaten", async (req, res) => {
+  try {
+    const menuItemId = Number(req.params.menuItemId);
+    const { isEaten, userNote } = (req.body ?? {}) as MarkMenuItemEatenBody;
+
+    if (!Number.isInteger(menuItemId) || menuItemId <= 0) {
+      return res.status(400).json({
+        message: "Valid menuItemId is required",
+      });
+    }
+
+    if (typeof isEaten !== "boolean") {
+      return res.status(400).json({
+        message: "isEaten must be boolean",
+      });
+    }
+
+    const existingItem = await prisma.menuRecommendationItem.findUnique({
+      where: {
+        menuItemId,
+      },
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({
+        message: "Menu item not found",
+      });
+    }
+
+    const updatedItem = await prisma.menuRecommendationItem.update({
+      where: {
+        menuItemId,
+      },
+      data: {
+        isEaten,
+        eatenAt: isEaten ? new Date() : null,
+        ...(userNote !== undefined && { userNote }),
+      },
+    });
+
+    return res.status(200).json({
+      message: isEaten
+        ? "Menu item marked as eaten"
+        : "Menu item marked as not eaten",
+      data: updatedItem,
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to update eaten status",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+mealRecommendationRoutes.get(
+  "/clients/:clientId/menu-by-date",
+  async (req, res) => {
+    try {
+      const clientId = Number(req.params.clientId);
+      const date = String(req.query.date ?? "");
+
+      if (!Number.isInteger(clientId) || clientId <= 0) {
+        return res.status(400).json({
+          message: "Valid clientId is required",
+        });
+      }
+
+      if (!date) {
+        return res.status(400).json({
+          message: "date query is required. Use YYYY-MM-DD.",
+        });
+      }
+
+      const targetDate = parseDateOnly(date);
+
+      if (!targetDate) {
+        return res.status(400).json({
+          message: "Invalid date format. Use YYYY-MM-DD.",
+        });
+      }
+
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const menuDay = await prisma.menuRecommendationDay.findFirst({
+        where: {
+          menuDate: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+          menuRecommendation: {
+            screeningSession: {
+              clientId,
+            },
+          },
+        },
+        orderBy: {
+          menuRecommendation: {
+            generatedAt: "desc",
+          },
+        },
+        include: {
+          menuRecommendation: {
+            include: {
+              screeningSession: {
+                include: {
+                  client: true,
+                },
+              },
+            },
+          },
+          items: {
+            orderBy: {
+              mealTime: "asc",
+            },
+          },
+        },
+      });
+
+      if (!menuDay) {
+        return res.status(404).json({
+          message: "No menu found for this client and date",
+          clientId,
+          date,
+        });
+      }
+
+      return res.status(200).json({
+        message: "Menu by date retrieved successfully",
+        data: {
+          client: {
+            clientId:
+              menuDay.menuRecommendation.screeningSession.client.clientId,
+            fullName:
+              menuDay.menuRecommendation.screeningSession.client.fullName,
+            age: menuDay.menuRecommendation.screeningSession.client.age,
+            gender: menuDay.menuRecommendation.screeningSession.client.gender,
+          },
+          menuRecommendationId: menuDay.menuRecommendationId,
+          screeningId: menuDay.menuRecommendation.screeningId,
+          dietType: menuDay.menuRecommendation.dietType,
+          targetEnergyKcal: menuDay.menuRecommendation.targetEnergyKcal,
+          targetCarbohydrateG: menuDay.menuRecommendation.targetCarbohydrateG,
+          targetProteinG: menuDay.menuRecommendation.targetProteinG,
+          targetFatG: menuDay.menuRecommendation.targetFatG,
+          day: {
+            menuDayId: menuDay.menuDayId,
+            dayNumber: menuDay.dayNumber,
+            menuDate: menuDay.menuDate,
+            summary: {
+              energyKcal: menuDay.energyKcal,
+              proteinG: menuDay.proteinG,
+              fatG: menuDay.fatG,
+              carbG: menuDay.carbG,
+              sodiumMg: menuDay.sodiumMg,
+              fiberG: menuDay.fiberG,
+            },
+            meals: groupItemsByMealForResponse(menuDay.items),
+          },
+        },
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to retrieve menu by date",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
+
+function parseDateOnly(date: string): Date | null {
+  const isValidFormat = /^\d{4}-\d{2}-\d{2}$/.test(date);
+
+  if (!isValidFormat) {
+    return null;
+  }
+
+  const parsedDate = new Date(`${date}T00:00:00`);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate;
+}
+
+type MenuItemForResponse = {
+  menuItemId: number;
+  mealTime: string;
+  foodName: string;
+  categoryCode: string;
+  portion: number;
+  urt: string | null;
+  gram: number | null;
+  energyKcal: number;
+  proteinG: number;
+  fatG: number;
+  carbG: number;
+  sodiumMg: number;
+  fiberG: number;
+  isEaten?: boolean;
+  eatenAt?: Date | null;
+  userNote?: string | null;
+};
+
+function groupItemsByMealForResponse(items: MenuItemForResponse[]) {
+  const mealOrder = [
+    "breakfast",
+    "morning_snack",
+    "lunch",
+    "afternoon_snack",
+    "dinner",
+  ];
+
+  const grouped: Record<string, MenuItemForResponse[]> = {};
+
+  for (const item of items) {
+    if (!grouped[item.mealTime]) {
+      grouped[item.mealTime] = [];
+    }
+
+    grouped[item.mealTime].push(item);
+  }
+
+  return mealOrder
+    .filter((mealTime) => grouped[mealTime])
+    .map((mealTime) => ({
+      mealTime,
+      items: grouped[mealTime].map((item) => ({
+        menuItemId: item.menuItemId,
+        foodName: item.foodName,
+        categoryCode: item.categoryCode,
+        portion: item.portion,
+        urt: item.urt,
+        gram: item.gram,
+        nutrition: {
+          energyKcal: item.energyKcal,
+          proteinG: item.proteinG,
+          fatG: item.fatG,
+          carbG: item.carbG,
+          sodiumMg: item.sodiumMg,
+          fiberG: item.fiberG,
+        },
+        isEaten: item.isEaten ?? false,
+        eatenAt: item.eatenAt ?? null,
+        userNote: item.userNote ?? null,
+      })),
+    }));
+}
+
+mealRecommendationRoutes.get(
+  "/clients/:clientId/menu-dates",
+  async (req, res) => {
+    try {
+      const clientId = Number(req.params.clientId);
+
+      if (!Number.isInteger(clientId) || clientId <= 0) {
+        return res.status(400).json({
+          message: "Valid clientId is required",
+        });
+      }
+
+      const menuDays = await prisma.menuRecommendationDay.findMany({
+        where: {
+          menuRecommendation: {
+            screeningSession: {
+              clientId,
+            },
+          },
+        },
+        orderBy: {
+          menuDate: "asc",
+        },
+        select: {
+          menuDayId: true,
+          dayNumber: true,
+          menuDate: true,
+          energyKcal: true,
+          proteinG: true,
+          fatG: true,
+          carbG: true,
+          menuRecommendation: {
+            select: {
+              menuRecommendationId: true,
+              screeningId: true,
+              dietType: true,
+              generatedAt: true,
+            },
+          },
+        },
+      });
+
+      const dates = menuDays.map((day) => ({
+        menuDayId: day.menuDayId,
+        menuRecommendationId: day.menuRecommendation.menuRecommendationId,
+        screeningId: day.menuRecommendation.screeningId,
+        dietType: day.menuRecommendation.dietType,
+        dayNumber: day.dayNumber,
+        menuDate: day.menuDate,
+        generatedAt: day.menuRecommendation.generatedAt,
+        summary: {
+          energyKcal: day.energyKcal,
+          proteinG: day.proteinG,
+          fatG: day.fatG,
+          carbG: day.carbG,
+        },
+      }));
+
+      return res.status(200).json({
+        message: "Client menu dates retrieved successfully",
+        clientId,
+        totalDates: dates.length,
+        data: dates,
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to retrieve client menu dates",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);

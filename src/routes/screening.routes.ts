@@ -753,3 +753,297 @@ screeningRoutes.get("/:screeningId/energy-requirement", async (req, res) => {
     });
   }
 });
+
+screeningRoutes.get("/clients/:clientId/history", async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+
+    if (!Number.isInteger(clientId) || clientId <= 0) {
+      return res.status(400).json({
+        message: "Valid clientId is required",
+      });
+    }
+
+    const client = await prisma.client.findUnique({
+      where: {
+        clientId,
+      },
+      include: {
+        screeningSessions: {
+          orderBy: {
+            screeningDate: "asc",
+          },
+          include: {
+            anthropometryAssessment: true,
+            biochemicalAssessment: true,
+            clinicalAssessment: true,
+            screeningResult: true,
+            energyRequirement: true,
+          },
+        },
+      },
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        message: "Client not found",
+      });
+    }
+
+    const history = client.screeningSessions.map((screening) => {
+      const anthropometry = screening.anthropometryAssessment;
+      const biochemical = screening.biochemicalAssessment;
+      const clinical = screening.clinicalAssessment;
+      const result = screening.screeningResult;
+      const energy = screening.energyRequirement;
+
+      return {
+        screeningId: screening.screeningId,
+        screeningDate: screening.screeningDate,
+        screeningStatus: screening.screeningStatus,
+
+        anthropometry: {
+          weightKg: anthropometry?.weightKg ?? null,
+          heightCm: anthropometry?.heightCm ?? null,
+          bmi: anthropometry?.bmi ?? null,
+          bmiStatus: anthropometry?.bmiStatus ?? null,
+          waistCircumferenceCm: anthropometry?.waistCircumferenceCm ?? null,
+          waistStatus: anthropometry?.waistStatus ?? null,
+        },
+
+        bloodGlucose: {
+          fastingGlucoseMgDl: biochemical?.fastingGlucoseMgDl ?? null,
+          postprandialGlucoseMgDl: biochemical?.postprandialGlucoseMgDl ?? null,
+          randomGlucoseMgDl: biochemical?.randomGlucoseMgDl ?? null,
+          hba1cPercent: biochemical?.hba1cPercent ?? null,
+          glucoseStatus: biochemical?.glucoseStatus ?? null,
+          hba1cStatus: biochemical?.hba1cStatus ?? null,
+        },
+
+        bloodPressure: {
+          systolicBp: clinical?.systolicBp ?? null,
+          diastolicBp: clinical?.diastolicBp ?? null,
+          bloodPressureStatus: clinical?.bloodPressureStatus ?? null,
+        },
+
+        screeningResult: {
+          diabetesStatus: result?.diabetesStatus ?? null,
+          hypertensionStatus: result?.hypertensionStatus ?? null,
+          obesityStatus: result?.obesityStatus ?? null,
+          finalScreeningCategory: result?.finalScreeningCategory ?? null,
+          referralRequired: result?.referralRequired ?? false,
+          referralReason: result?.referralReason ?? null,
+        },
+
+        energyRequirement: {
+          dailyEnergyKcal: energy?.dailyEnergyKcal ?? null,
+          carbohydrateGram: energy?.carbohydrateGram ?? null,
+          proteinGram: energy?.proteinGram ?? null,
+          fatGram: energy?.fatGram ?? null,
+        },
+      };
+    });
+
+    return res.status(200).json({
+      message: "Screening history retrieved successfully",
+      data: {
+        client: {
+          clientId: client.clientId,
+          fullName: client.fullName,
+          age: client.age,
+          gender: client.gender,
+          occupation: client.occupation,
+        },
+        totalScreenings: history.length,
+        history,
+      },
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve screening history",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+screeningRoutes.post("/:clientId/new-screening", async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+
+    if (!Number.isInteger(clientId) || clientId <= 0) {
+      return res.status(400).json({
+        message: "Valid clientId is required",
+      });
+    }
+
+    const client = await prisma.client.findUnique({
+      where: {
+        clientId,
+      },
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        message: "Client not found",
+      });
+    }
+
+    const screening = await prisma.screeningSession.create({
+      data: {
+        clientId,
+        screeningDate: new Date(),
+        screeningStatus: "weekly_screening_started",
+      },
+    });
+
+    return res.status(201).json({
+      message: "Weekly screening session started successfully",
+      data: {
+        screeningId: screening.screeningId,
+        clientId: screening.clientId,
+        screeningDate: screening.screeningDate,
+        screeningStatus: screening.screeningStatus,
+      },
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to start weekly screening session",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+    const { weightKg, heightCm, waistCircumferenceCm } = req.body;
+
+    if (!Number.isInteger(screeningId) || screeningId <= 0) {
+      return res.status(400).json({
+        message: "Valid screeningId is required",
+      });
+    }
+
+    if (weightKg === undefined || heightCm === undefined) {
+      return res.status(400).json({
+        message: "weightKg and heightCm are required",
+      });
+    }
+
+    const screening = await prisma.screeningSession.findUnique({
+      where: {
+        screeningId,
+      },
+      include: {
+        client: true,
+      },
+    });
+
+    if (!screening) {
+      return res.status(404).json({
+        message: "Screening session not found",
+      });
+    }
+
+    const weight = Number(weightKg);
+    const height = Number(heightCm);
+    const waist =
+      waistCircumferenceCm !== undefined ? Number(waistCircumferenceCm) : null;
+
+    const heightMeter = height / 100;
+    const bmi = weight / (heightMeter * heightMeter);
+
+    let bmiStatus = "Normal";
+
+    if (bmi < 18.5) {
+      bmiStatus = "Underweight";
+    } else if (bmi >= 18.5 && bmi < 25) {
+      bmiStatus = "Normal";
+    } else if (bmi >= 25 && bmi < 30) {
+      bmiStatus = "Overweight";
+    } else {
+      bmiStatus = "Obesity";
+    }
+
+    let waistStatus = "Normal";
+
+    if (waist !== null) {
+      const gender = screening.client.gender.toLowerCase();
+
+      if ((gender === "male" || gender === "laki-laki") && waist >= 90) {
+        waistStatus = "High Risk";
+      } else if (
+        (gender === "female" || gender === "perempuan") &&
+        waist >= 80
+      ) {
+        waistStatus = "High Risk";
+      }
+    }
+
+    const anthropometry = await prisma.anthropometryAssessment.upsert({
+      where: {
+        screeningId,
+      },
+      update: {
+        weightKg: weight,
+        heightCm: height,
+        bmi: Number(bmi.toFixed(2)),
+        waistCircumferenceCm: waist,
+        bmiStatus,
+        waistStatus,
+      },
+      create: {
+        screeningId,
+        weightKg: weight,
+        heightCm: height,
+        bmi: Number(bmi.toFixed(2)),
+        waistCircumferenceCm: waist,
+        bmiStatus,
+        waistStatus,
+      },
+    });
+
+    const obesityStatus =
+      bmiStatus === "Obesity" || waistStatus === "High Risk"
+        ? "Obesity"
+        : "Normal";
+
+    await prisma.screeningResult.upsert({
+      where: {
+        screeningId,
+      },
+      update: {
+        obesityStatus,
+      },
+      create: {
+        screeningId,
+        obesityStatus,
+      },
+    });
+
+    await prisma.screeningSession.update({
+      where: {
+        screeningId,
+      },
+      data: {
+        screeningStatus: "anthropometry_completed",
+      },
+    });
+
+    return res.status(201).json({
+      message: "Weekly anthropometry data saved successfully",
+      data: anthropometry,
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to save weekly anthropometry data",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});

@@ -181,26 +181,27 @@ model MenuRecommendation {
 
   @@map("menu_recommendations")
 }
-
 model MenuRecommendationDay {
-  menuDayId            Int   @id @default(autoincrement()) @map("menu_day_id")
-  menuRecommendationId Int   @map("menu_recommendation_id")
-  dayNumber            Int   @map("day_number")
+  menuDayId            Int      @id @default(autoincrement()) @map("menu_day_id")
+  menuRecommendationId Int      @map("menu_recommendation_id")
+  dayNumber            Int      @map("day_number")
 
-  energyKcal           Float @map("energy_kcal")
-  proteinG             Float @map("protein_g")
-  fatG                 Float @map("fat_g")
-  carbG                Float @map("carb_g")
-  sodiumMg             Float @map("sodium_mg")
-  fiberG               Float @map("fiber_g")
+  menuDate             DateTime @map("menu_date")
+
+  energyKcal           Float    @map("energy_kcal")
+  proteinG             Float    @map("protein_g")
+  fatG                 Float    @map("fat_g")
+  carbG                Float    @map("carb_g")
+  sodiumMg             Float    @map("sodium_mg")
+  fiberG               Float    @map("fiber_g")
 
   menuRecommendation MenuRecommendation @relation(fields: [menuRecommendationId], references: [menuRecommendationId], onDelete: Cascade)
   items              MenuRecommendationItem[]
 
   @@unique([menuRecommendationId, dayNumber])
+  @@unique([menuRecommendationId, menuDate])
   @@map("menu_recommendation_days")
 }
-
 model MenuRecommendationItem {
   menuItemId Int @id @default(autoincrement()) @map("menu_item_id")
   menuDayId  Int @map("menu_day_id")
@@ -219,6 +220,10 @@ model MenuRecommendationItem {
   carbG      Float @map("carb_g")
   sodiumMg   Float @map("sodium_mg")
   fiberG     Float @map("fiber_g")
+
+  isEaten     Boolean   @default(false) @map("is_eaten")
+  eatenAt     DateTime? @map("eaten_at")
+  userNote    String?   @map("user_note") @db.Text
 
   menuDay MenuRecommendationDay @relation(fields: [menuDayId], references: [menuDayId], onDelete: Cascade)
 
