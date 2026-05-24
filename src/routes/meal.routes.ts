@@ -1200,7 +1200,6 @@ mealRecommendationRoutes.delete(
     }
   },
 );
-
 async function recalculateMenuDaySummary(menuDayId: number) {
   const items = await prisma.menuRecommendationItem.findMany({
     where: {
@@ -1217,7 +1216,7 @@ async function recalculateMenuDaySummary(menuDayId: number) {
   });
 
   const totals = items.reduce<NutritionTotals>(
-    (acc, item) => {
+    (acc: NutritionTotals, item: NutritionTotals): NutritionTotals => {
       acc.energyKcal += item.energyKcal;
       acc.proteinG += item.proteinG;
       acc.fatG += item.fatG;
