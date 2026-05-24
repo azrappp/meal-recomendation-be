@@ -1,4 +1,4 @@
-import { calculateMacros, normalizeText } from "../utils/nutrition.util";
+import { calculateMacros, normalizeText } from "../utils/nutrition.util.js";
 
 type EnergyCalculationInput = {
   weight: number;

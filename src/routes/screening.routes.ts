@@ -1,6 +1,6 @@
 import { Router } from "express";
-import prisma from "../lib/prisma";
-import { calculateEnergyRequirement } from "../services/energy.service";
+import prisma from "../lib/prisma.js";
+import { calculateEnergyRequirement } from "../services/energy.service.js";
 
 export const screeningRoutes = Router();
 
