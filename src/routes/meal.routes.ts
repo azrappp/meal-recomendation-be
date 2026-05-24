@@ -20,8 +20,7 @@ type FastApiMealPayload = {
 };
 
 const FASTAPI_BASE_URL =
-  process.env.FASTAPI_BASE_URL || "http://localhost:8000";
-
+  process.env.FASTAPI_BASE_URL || "https://menu-api-rust.vercel.app";
 /**
  * Get required data for FastAPI meal recommendation
  * This endpoint only checks and previews the payload.
