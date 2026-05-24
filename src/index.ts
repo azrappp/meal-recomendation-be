@@ -1,8 +1,8 @@
 import express from "express";
 import cors from "cors";
-import { clientRoutes } from "./routes/client.routes";
-import { screeningRoutes } from "./routes/screening.routes";
-import { mealRecommendationRoutes } from "./routes/meal.routes";
+import { clientRoutes } from "./routes/client.routes.js";
+import { screeningRoutes } from "./routes/screening.routes.js";
+import { mealRecommendationRoutes } from "./routes/meal.routes.js";
 
 const app = express();
 
