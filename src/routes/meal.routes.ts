@@ -50,6 +50,31 @@ type FastApiMealResponse = {
   meals: FastApiMeal[];
 };
 
+type MenuDayWithRecommendation = {
+  menuDayId: number;
+  dayNumber: number;
+  menuDate: Date;
+  energyKcal: number;
+  proteinG: number;
+  fatG: number;
+  carbG: number;
+  menuRecommendation: {
+    menuRecommendationId: number;
+    screeningId: number;
+    dietType: string;
+    generatedAt: Date;
+  };
+};
+
+type NutritionTotals = {
+  energyKcal: number;
+  proteinG: number;
+  fatG: number;
+  carbG: number;
+  sodiumMg: number;
+  fiberG: number;
+};
+
 const FASTAPI_BASE_URL =
   process.env.FASTAPI_BASE_URL || "https://menu-api-rust.vercel.app";
 /**
@@ -1181,9 +1206,17 @@ async function recalculateMenuDaySummary(menuDayId: number) {
     where: {
       menuDayId,
     },
+    select: {
+      energyKcal: true,
+      proteinG: true,
+      fatG: true,
+      carbG: true,
+      sodiumMg: true,
+      fiberG: true,
+    },
   });
 
-  const totals = items.reduce(
+  const totals = items.reduce<NutritionTotals>(
     (acc, item) => {
       acc.energyKcal += item.energyKcal;
       acc.proteinG += item.proteinG;
@@ -1529,7 +1562,7 @@ mealRecommendationRoutes.get(
         },
       });
 
-      const dates = menuDays.map((day) => ({
+      const dates = menuDays.map((day: MenuDayWithRecommendation) => ({
         menuDayId: day.menuDayId,
         menuRecommendationId: day.menuRecommendation.menuRecommendationId,
         screeningId: day.menuRecommendation.screeningId,
