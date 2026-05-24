@@ -212,105 +212,110 @@ clientRoutes.get("/:clientId/screening-history", async (req, res) => {
       });
     }
 
-    const history = client.screeningSessions.map((session) => ({
-      screeningId: session.screeningId,
-      screeningDate: formatDateOnly(session.screeningDate),
-      screeningStatus: session.screeningStatus,
+    const history = client.screeningSessions.map(
+      (session: (typeof client.screeningSessions)[number]) => ({
+        screeningId: session.screeningId,
+        screeningDate: formatDateOnly(session.screeningDate),
+        screeningStatus: session.screeningStatus,
 
-      anthropometry: session.anthropometryAssessment
-        ? {
-            weightKg: session.anthropometryAssessment.weightKg,
-            heightCm: session.anthropometryAssessment.heightCm,
-            bmi: session.anthropometryAssessment.bmi,
-            waistCircumferenceCm:
-              session.anthropometryAssessment.waistCircumferenceCm,
-            bmiStatus: session.anthropometryAssessment.bmiStatus,
-            waistStatus: session.anthropometryAssessment.waistStatus,
-          }
-        : null,
+        anthropometry: session.anthropometryAssessment
+          ? {
+              weightKg: session.anthropometryAssessment.weightKg,
+              heightCm: session.anthropometryAssessment.heightCm,
+              bmi: session.anthropometryAssessment.bmi,
+              waistCircumferenceCm:
+                session.anthropometryAssessment.waistCircumferenceCm,
+              bmiStatus: session.anthropometryAssessment.bmiStatus,
+              waistStatus: session.anthropometryAssessment.waistStatus,
+            }
+          : null,
 
-      glucose: session.biochemicalAssessment
-        ? {
-            fastingGlucoseMgDl:
-              session.biochemicalAssessment.fastingGlucoseMgDl,
-            postprandialGlucoseMgDl:
-              session.biochemicalAssessment.postprandialGlucoseMgDl,
-            randomGlucoseMgDl: session.biochemicalAssessment.randomGlucoseMgDl,
-            hba1cPercent: session.biochemicalAssessment.hba1cPercent,
-            glucoseStatus: session.biochemicalAssessment.glucoseStatus,
-            hba1cStatus: session.biochemicalAssessment.hba1cStatus,
-          }
-        : null,
+        glucose: session.biochemicalAssessment
+          ? {
+              fastingGlucoseMgDl:
+                session.biochemicalAssessment.fastingGlucoseMgDl,
+              postprandialGlucoseMgDl:
+                session.biochemicalAssessment.postprandialGlucoseMgDl,
+              randomGlucoseMgDl:
+                session.biochemicalAssessment.randomGlucoseMgDl,
+              hba1cPercent: session.biochemicalAssessment.hba1cPercent,
+              glucoseStatus: session.biochemicalAssessment.glucoseStatus,
+              hba1cStatus: session.biochemicalAssessment.hba1cStatus,
+            }
+          : null,
 
-      bloodPressure: session.clinicalAssessment
-        ? {
-            systolicBp: session.clinicalAssessment.systolicBp,
-            diastolicBp: session.clinicalAssessment.diastolicBp,
-            bloodPressureStatus: session.clinicalAssessment.bloodPressureStatus,
-          }
-        : null,
+        bloodPressure: session.clinicalAssessment
+          ? {
+              systolicBp: session.clinicalAssessment.systolicBp,
+              diastolicBp: session.clinicalAssessment.diastolicBp,
+              bloodPressureStatus:
+                session.clinicalAssessment.bloodPressureStatus,
+            }
+          : null,
 
-      clinicalSymptoms: session.clinicalAssessment
-        ? {
-            headache: session.clinicalAssessment.headache,
-            chestPain: session.clinicalAssessment.chestPain,
-            visualDisturbance: session.clinicalAssessment.visualDisturbance,
-            frequentUrinationNight:
-              session.clinicalAssessment.frequentUrinationNight,
-            shortnessOfBreath: session.clinicalAssessment.shortnessOfBreath,
-            polyphagia: session.clinicalAssessment.polyphagia,
-            dizziness: session.clinicalAssessment.dizziness,
-            polydipsia: session.clinicalAssessment.polydipsia,
-          }
-        : null,
+        clinicalSymptoms: session.clinicalAssessment
+          ? {
+              headache: session.clinicalAssessment.headache,
+              chestPain: session.clinicalAssessment.chestPain,
+              visualDisturbance: session.clinicalAssessment.visualDisturbance,
+              frequentUrinationNight:
+                session.clinicalAssessment.frequentUrinationNight,
+              shortnessOfBreath: session.clinicalAssessment.shortnessOfBreath,
+              polyphagia: session.clinicalAssessment.polyphagia,
+              dizziness: session.clinicalAssessment.dizziness,
+              polydipsia: session.clinicalAssessment.polydipsia,
+            }
+          : null,
 
-      screeningResult: session.screeningResult
-        ? {
-            diabetesStatus: session.screeningResult.diabetesStatus,
-            hypertensionStatus: session.screeningResult.hypertensionStatus,
-            obesityStatus: session.screeningResult.obesityStatus,
-            finalScreeningCategory:
-              session.screeningResult.finalScreeningCategory,
-            referralRequired: session.screeningResult.referralRequired,
-            referralReason: session.screeningResult.referralReason,
-            screeningSummary: session.screeningResult.screeningSummary,
-          }
-        : null,
+        screeningResult: session.screeningResult
+          ? {
+              diabetesStatus: session.screeningResult.diabetesStatus,
+              hypertensionStatus: session.screeningResult.hypertensionStatus,
+              obesityStatus: session.screeningResult.obesityStatus,
+              finalScreeningCategory:
+                session.screeningResult.finalScreeningCategory,
+              referralRequired: session.screeningResult.referralRequired,
+              referralReason: session.screeningResult.referralReason,
+              screeningSummary: session.screeningResult.screeningSummary,
+            }
+          : null,
 
-      energyRequirement: session.energyRequirement
-        ? {
-            dailyEnergyKcal: session.energyRequirement.dailyEnergyKcal,
-            carbohydrateGram: session.energyRequirement.carbohydrateGram,
-            proteinGram: session.energyRequirement.proteinGram,
-            fatGram: session.energyRequirement.fatGram,
-          }
-        : null,
+        energyRequirement: session.energyRequirement
+          ? {
+              dailyEnergyKcal: session.energyRequirement.dailyEnergyKcal,
+              carbohydrateGram: session.energyRequirement.carbohydrateGram,
+              proteinGram: session.energyRequirement.proteinGram,
+              fatGram: session.energyRequirement.fatGram,
+            }
+          : null,
 
-      physicalActivity: session.physicalActivityAssessment
-        ? {
-            activityLevel: session.physicalActivityAssessment.activityLevel,
-            activityScore: session.physicalActivityAssessment.activityScore,
-          }
-        : null,
+        physicalActivity: session.physicalActivityAssessment
+          ? {
+              activityLevel: session.physicalActivityAssessment.activityLevel,
+              activityScore: session.physicalActivityAssessment.activityScore,
+            }
+          : null,
 
-      medication: session.medicationAssessment
-        ? {
-            usesHypertensionDrug:
-              session.medicationAssessment.usesHypertensionDrug,
-            usesOralAntidiabetic:
-              session.medicationAssessment.usesOralAntidiabetic,
-            usesInsulin: session.medicationAssessment.usesInsulin,
-            hypertensionDrugName:
-              session.medicationAssessment.hypertensionDrugName,
-            antidiabeticDrugName:
-              session.medicationAssessment.antidiabeticDrugName,
-            insulinAlertStatus: session.medicationAssessment.insulinAlertStatus,
-            medicationNotes: session.medicationAssessment.medicationNotes,
-          }
-        : null,
-    }));
+        medication: session.medicationAssessment
+          ? {
+              usesHypertensionDrug:
+                session.medicationAssessment.usesHypertensionDrug,
+              usesOralAntidiabetic:
+                session.medicationAssessment.usesOralAntidiabetic,
+              usesInsulin: session.medicationAssessment.usesInsulin,
+              hypertensionDrugName:
+                session.medicationAssessment.hypertensionDrugName,
+              antidiabeticDrugName:
+                session.medicationAssessment.antidiabeticDrugName,
+              insulinAlertStatus:
+                session.medicationAssessment.insulinAlertStatus,
+              medicationNotes: session.medicationAssessment.medicationNotes,
+            }
+          : null,
+      }),
+    );
 
-    const chartData = history.map((item) => ({
+    const chartData = history.map((item: (typeof history)[number]) => ({
       screeningDate: item.screeningDate,
       weightKg: item.anthropometry?.weightKg ?? null,
       bmi: item.anthropometry?.bmi ?? null,
