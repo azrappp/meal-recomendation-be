@@ -19,6 +19,37 @@ type FastApiMealPayload = {
   fiber_g_min: number;
 };
 
+type FastApiMealItem = {
+  food_name: string;
+  category_code: string;
+  portion: number;
+  urt: string | null;
+  gram: number | null;
+  energy_kcal: number;
+  protein_g: number;
+  fat_g: number;
+  carb_g: number;
+  sodium_mg?: number;
+  fiber_g?: number;
+};
+
+type FastApiMeal = {
+  meal_time: string;
+  items: FastApiMealItem[];
+};
+
+type FastApiMealResponse = {
+  daily_total: {
+    energy_kcal: number;
+    protein_g: number;
+    fat_g: number;
+    carb_g: number;
+    sodium_mg: number;
+    fiber_g: number;
+  };
+  meals: FastApiMeal[];
+};
+
 const FASTAPI_BASE_URL =
   process.env.FASTAPI_BASE_URL || "https://menu-api-rust.vercel.app";
 /**
@@ -275,7 +306,7 @@ function updateWeeklyHistory(
     usedFoodCounts: Record<string, number>;
     categoryUsedFoodCounts: Record<string, Record<string, number>>;
   },
-  dailyMenu: any,
+  dailyMenu: FastApiMealResponse,
 ) {
   const foodsUsedToday = new Map<string, string>();
 
@@ -575,7 +606,7 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
       categoryUsedFoodCounts: {} as Record<string, Record<string, number>>,
     };
 
-    const generatedMenus: any[] = [];
+    const generatedMenus: FastApiMealResponse[] = [];
 
     for (let day = 1; day <= 7; day++) {
       const rotatedAllowedFoodNames = buildAllowedFoodNamesForDay(day);
@@ -735,7 +766,7 @@ async function saveGeneratedMenu(params: {
   screeningId: number;
   dietType: string;
   fastApiPayload: FastApiMealPayload;
-  generatedMenu: any;
+  generatedMenu: FastApiMealResponse;
   startDate: Date;
 }) {
   const { screeningId, dietType, fastApiPayload, generatedMenu, startDate } =
@@ -767,8 +798,8 @@ async function saveGeneratedMenu(params: {
             fiberG: generatedMenu.daily_total.fiber_g,
 
             items: {
-              create: generatedMenu.meals.flatMap((meal: any) =>
-                meal.items.map((item: any) => ({
+              create: generatedMenu.meals.flatMap((meal: FastApiMeal) =>
+                meal.items.map((item: FastApiMealItem) => ({
                   mealTime: meal.meal_time,
                   foodName: item.food_name,
                   categoryCode: item.category_code,
@@ -850,7 +881,7 @@ async function saveGeneratedWeeklyMenu(params: {
   screeningId: number;
   dietType: string;
   fastApiPayload: FastApiMealPayload;
-  generatedMenus: any[];
+  generatedMenus: FastApiMealResponse[];
   startDate: Date;
 }) {
   const { screeningId, dietType, fastApiPayload, generatedMenus, startDate } =
@@ -881,8 +912,8 @@ async function saveGeneratedWeeklyMenu(params: {
           fiberG: menu.daily_total.fiber_g,
 
           items: {
-            create: menu.meals.flatMap((meal: any) =>
-              meal.items.map((item: any) => ({
+            create: menu.meals.flatMap((meal: FastApiMeal) =>
+              meal.items.map((item: FastApiMealItem) => ({
                 mealTime: meal.meal_time,
                 foodName: item.food_name,
                 categoryCode: item.category_code,

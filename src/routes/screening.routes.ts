@@ -790,59 +790,62 @@ screeningRoutes.get("/clients/:clientId/history", async (req, res) => {
       });
     }
 
-    const history = client.screeningSessions.map((screening) => {
-      const anthropometry = screening.anthropometryAssessment;
-      const biochemical = screening.biochemicalAssessment;
-      const clinical = screening.clinicalAssessment;
-      const result = screening.screeningResult;
-      const energy = screening.energyRequirement;
+    const history = client.screeningSessions.map(
+      (screening: (typeof client.screeningSessions)[number]) => {
+        const anthropometry = screening.anthropometryAssessment;
+        const biochemical = screening.biochemicalAssessment;
+        const clinical = screening.clinicalAssessment;
+        const result = screening.screeningResult;
+        const energy = screening.energyRequirement;
 
-      return {
-        screeningId: screening.screeningId,
-        screeningDate: screening.screeningDate,
-        screeningStatus: screening.screeningStatus,
+        return {
+          screeningId: screening.screeningId,
+          screeningDate: screening.screeningDate,
+          screeningStatus: screening.screeningStatus,
 
-        anthropometry: {
-          weightKg: anthropometry?.weightKg ?? null,
-          heightCm: anthropometry?.heightCm ?? null,
-          bmi: anthropometry?.bmi ?? null,
-          bmiStatus: anthropometry?.bmiStatus ?? null,
-          waistCircumferenceCm: anthropometry?.waistCircumferenceCm ?? null,
-          waistStatus: anthropometry?.waistStatus ?? null,
-        },
+          anthropometry: {
+            weightKg: anthropometry?.weightKg ?? null,
+            heightCm: anthropometry?.heightCm ?? null,
+            bmi: anthropometry?.bmi ?? null,
+            bmiStatus: anthropometry?.bmiStatus ?? null,
+            waistCircumferenceCm: anthropometry?.waistCircumferenceCm ?? null,
+            waistStatus: anthropometry?.waistStatus ?? null,
+          },
 
-        bloodGlucose: {
-          fastingGlucoseMgDl: biochemical?.fastingGlucoseMgDl ?? null,
-          postprandialGlucoseMgDl: biochemical?.postprandialGlucoseMgDl ?? null,
-          randomGlucoseMgDl: biochemical?.randomGlucoseMgDl ?? null,
-          hba1cPercent: biochemical?.hba1cPercent ?? null,
-          glucoseStatus: biochemical?.glucoseStatus ?? null,
-          hba1cStatus: biochemical?.hba1cStatus ?? null,
-        },
+          bloodGlucose: {
+            fastingGlucoseMgDl: biochemical?.fastingGlucoseMgDl ?? null,
+            postprandialGlucoseMgDl:
+              biochemical?.postprandialGlucoseMgDl ?? null,
+            randomGlucoseMgDl: biochemical?.randomGlucoseMgDl ?? null,
+            hba1cPercent: biochemical?.hba1cPercent ?? null,
+            glucoseStatus: biochemical?.glucoseStatus ?? null,
+            hba1cStatus: biochemical?.hba1cStatus ?? null,
+          },
 
-        bloodPressure: {
-          systolicBp: clinical?.systolicBp ?? null,
-          diastolicBp: clinical?.diastolicBp ?? null,
-          bloodPressureStatus: clinical?.bloodPressureStatus ?? null,
-        },
+          bloodPressure: {
+            systolicBp: clinical?.systolicBp ?? null,
+            diastolicBp: clinical?.diastolicBp ?? null,
+            bloodPressureStatus: clinical?.bloodPressureStatus ?? null,
+          },
 
-        screeningResult: {
-          diabetesStatus: result?.diabetesStatus ?? null,
-          hypertensionStatus: result?.hypertensionStatus ?? null,
-          obesityStatus: result?.obesityStatus ?? null,
-          finalScreeningCategory: result?.finalScreeningCategory ?? null,
-          referralRequired: result?.referralRequired ?? false,
-          referralReason: result?.referralReason ?? null,
-        },
+          screeningResult: {
+            diabetesStatus: result?.diabetesStatus ?? null,
+            hypertensionStatus: result?.hypertensionStatus ?? null,
+            obesityStatus: result?.obesityStatus ?? null,
+            finalScreeningCategory: result?.finalScreeningCategory ?? null,
+            referralRequired: result?.referralRequired ?? false,
+            referralReason: result?.referralReason ?? null,
+          },
 
-        energyRequirement: {
-          dailyEnergyKcal: energy?.dailyEnergyKcal ?? null,
-          carbohydrateGram: energy?.carbohydrateGram ?? null,
-          proteinGram: energy?.proteinGram ?? null,
-          fatGram: energy?.fatGram ?? null,
-        },
-      };
-    });
+          energyRequirement: {
+            dailyEnergyKcal: energy?.dailyEnergyKcal ?? null,
+            carbohydrateGram: energy?.carbohydrateGram ?? null,
+            proteinGram: energy?.proteinGram ?? null,
+            fatGram: energy?.fatGram ?? null,
+          },
+        };
+      },
+    );
 
     return res.status(200).json({
       message: "Screening history retrieved successfully",
