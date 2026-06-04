@@ -1088,3 +1088,9 @@ screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
     });
   }
 });
+
+screeningRoutes.get("/test-delete-route", (req, res) => {
+  res.json({
+    message: "Screening route is updated",
+  });
+});
