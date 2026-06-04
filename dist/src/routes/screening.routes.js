@@ -2,6 +2,11 @@ import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { calculateEnergyRequirement } from "../services/energy.service.js";
 export const screeningRoutes = Router();
+screeningRoutes.get("/test", (req, res) => {
+    res.json({
+        message: "Screening route is updated",
+    });
+});
 screeningRoutes.post("/identity", async (req, res) => {
     try {
         const { fullName, age, gender, occupation } = req.body;

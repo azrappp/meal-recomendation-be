@@ -4,7 +4,7 @@ import { calculateEnergyRequirement } from "../services/energy.service.js";
 
 export const screeningRoutes = Router();
 
-screeningRoutes.get("/test-delete-route", (req, res) => {
+screeningRoutes.get("/test", (req, res) => {
   res.json({
     message: "Screening route is updated",
   });
