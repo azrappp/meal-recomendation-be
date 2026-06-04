@@ -920,6 +920,50 @@ screeningRoutes.post("/:clientId/new-screening", async (req, res) => {
   }
 });
 
+screeningRoutes.delete("/:screeningId", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+
+    if (!Number.isInteger(screeningId) || screeningId <= 0) {
+      return res.status(400).json({
+        message: "Valid screeningId is required",
+      });
+    }
+
+    const screening = await prisma.screeningSession.findUnique({
+      where: {
+        screeningId,
+      },
+    });
+
+    if (!screening) {
+      return res.status(404).json({
+        message: "Screening session not found",
+      });
+    }
+
+    await prisma.screeningSession.delete({
+      where: {
+        screeningId,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Screening session deleted successfully",
+      data: {
+        screeningId,
+      },
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to delete screening session",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
