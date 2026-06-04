@@ -14,6 +14,12 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/api/vercel-test", (req, res) => {
+  res.json({
+    message: "Vercel is using this api/index.ts",
+    time: new Date().toISOString(),
+  });
+});
 app.use("/api/clients", clientRoutes);
 app.use("/api/screening", screeningRoutes);
 app.use("/api/meal", mealRecommendationRoutes);
