@@ -1,0 +1,17 @@
+import express from "express";
+import cors from "cors";
+import { clientRoutes } from "./routes/client.routes.js";
+import { screeningRoutes } from "./routes/screening.routes.js";
+import { mealRecommendationRoutes } from "./routes/meal.routes.js";
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.get("/", (req, res) => {
+    res.json({
+        message: "Meal screening REST API is running",
+    });
+});
+app.use("/api/clients", clientRoutes);
+app.use("/api/screening", screeningRoutes);
+app.use("/api/meal", mealRecommendationRoutes);
+export default app;

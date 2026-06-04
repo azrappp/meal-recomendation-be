@@ -931,9 +931,7 @@ screeningRoutes.delete("/:screeningId", async (req, res) => {
     }
 
     const screening = await prisma.screeningSession.findUnique({
-      where: {
-        screeningId,
-      },
+      where: { screeningId },
     });
 
     if (!screening) {
@@ -943,16 +941,12 @@ screeningRoutes.delete("/:screeningId", async (req, res) => {
     }
 
     await prisma.screeningSession.delete({
-      where: {
-        screeningId,
-      },
+      where: { screeningId },
     });
 
     return res.status(200).json({
       message: "Screening session deleted successfully",
-      data: {
-        screeningId,
-      },
+      data: { screeningId },
     });
   } catch (error: unknown) {
     console.error(error);
