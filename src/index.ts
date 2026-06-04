@@ -23,8 +23,5 @@ app.get("/api/vercel-test", (req, res) => {
 app.use("/api/clients", clientRoutes);
 app.use("/api/screening", screeningRoutes);
 app.use("/api/meal", mealRecommendationRoutes);
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+
 export default app;

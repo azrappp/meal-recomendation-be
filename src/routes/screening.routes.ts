@@ -4,6 +4,12 @@ import { calculateEnergyRequirement } from "../services/energy.service.js";
 
 export const screeningRoutes = Router();
 
+screeningRoutes.get("/test-delete-route", (req, res) => {
+  res.json({
+    message: "Screening route is updated",
+  });
+});
+
 screeningRoutes.post("/identity", async (req, res) => {
   try {
     const { fullName, age, gender, occupation } = req.body;
@@ -1087,10 +1093,4 @@ screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-});
-
-screeningRoutes.get("/test-delete-route", (req, res) => {
-  res.json({
-    message: "Screening route is updated",
-  });
 });
