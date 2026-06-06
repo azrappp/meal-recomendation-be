@@ -1146,7 +1146,6 @@ screeningRoutes.get("/client/:clientId", async (req, res) => {
         clientId: true,
         screeningStatus: true,
         createdAt: true,
-        updatedAt: true,
 
         screeningResult: {
           select: {
