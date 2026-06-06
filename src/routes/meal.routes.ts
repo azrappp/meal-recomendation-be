@@ -623,9 +623,6 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
       fatGram: screening.energyRequirement.fatGram,
     });
 
-    // IMPORTANT:
-    // weeklyHistory must be created inside this request,
-    // not globally outside the route.
     const weeklyHistory = {
       usedFoodCounts: {} as Record<string, number>,
       categoryUsedFoodCounts: {} as Record<string, Record<string, number>>,

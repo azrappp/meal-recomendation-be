@@ -4,12 +4,6 @@ import { calculateEnergyRequirement } from "../services/energy.service.js";
 
 export const screeningRoutes = Router();
 
-screeningRoutes.get("/test", (req, res) => {
-  res.json({
-    message: "Screening route is updated",
-  });
-});
-
 screeningRoutes.post("/identity", async (req, res) => {
   try {
     const { fullName, age, gender, occupation } = req.body;
@@ -191,21 +185,71 @@ screeningRoutes.get("/:screeningId/nutrition-status", async (req, res) => {
   }
 });
 
+screeningRoutes.get("/:screeningId/blood-glucose-status", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+
+    const biochemical = await prisma.biochemicalAssessment.findUnique({
+      where: { screeningId },
+    });
+
+    if (!biochemical) {
+      return res.status(404).json({
+        message: "Biochemical data not found",
+      });
+    }
+
+    let diagnosis = "Normal";
+    let glucoseTestType = "UNKNOWN";
+    let glucoseValue: number | null = null;
+
+    if (biochemical.fastingGlucoseMgDl !== null) {
+      glucoseTestType = "FPG";
+      glucoseValue = biochemical.fastingGlucoseMgDl;
+      diagnosis = biochemical.glucoseStatus ?? "Normal";
+    } else if (biochemical.postprandialGlucoseMgDl !== null) {
+      glucoseTestType = "TWO_HOUR";
+      glucoseValue = biochemical.postprandialGlucoseMgDl;
+      diagnosis = biochemical.glucoseStatus ?? "Normal";
+    } else if (biochemical.randomGlucoseMgDl !== null) {
+      glucoseTestType = "RANDOM";
+      glucoseValue = biochemical.randomGlucoseMgDl;
+      diagnosis = biochemical.glucoseStatus ?? "Normal";
+    } else if (biochemical.hba1cPercent !== null) {
+      glucoseTestType = "HBA1C";
+      glucoseValue = biochemical.hba1cPercent;
+      diagnosis = biochemical.hba1cStatus ?? "Normal";
+    }
+
+    return res.json({
+      message: "Blood glucose status retrieved successfully",
+      data: {
+        diagnosis,
+        glucoseTestType,
+        glucoseValue,
+        glucoseStatus: biochemical.glucoseStatus,
+        hba1cStatus: biochemical.hba1cStatus,
+        fastingGlucoseMgDl: biochemical.fastingGlucoseMgDl,
+        postprandialGlucoseMgDl: biochemical.postprandialGlucoseMgDl,
+        randomGlucoseMgDl: biochemical.randomGlucoseMgDl,
+        hba1cPercent: biochemical.hba1cPercent,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Failed to retrieve blood glucose status",
+    });
+  }
+});
 screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
 
-    const {
-      fastingGlucoseMgDl,
-      postprandialGlucoseMgDl,
-      randomGlucoseMgDl,
-      hba1cPercent,
-    } = req.body;
+    const { glucoseTestType, glucoseValue, hasClassicSymptoms } = req.body;
 
     const screening = await prisma.screeningSession.findUnique({
-      where: {
-        screeningId,
-      },
+      where: { screeningId },
     });
 
     if (!screening) {
@@ -214,43 +258,88 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
       });
     }
 
-    const fpg =
-      fastingGlucoseMgDl !== undefined ? Number(fastingGlucoseMgDl) : null;
-    const twoHourPg =
-      postprandialGlucoseMgDl !== undefined
-        ? Number(postprandialGlucoseMgDl)
-        : null;
-    const randomPg =
-      randomGlucoseMgDl !== undefined ? Number(randomGlucoseMgDl) : null;
-    const hba1c = hba1cPercent !== undefined ? Number(hba1cPercent) : null;
+    const allowedTypes = ["FPG", "TWO_HOUR", "RANDOM", "HBA1C"];
 
-    let glucoseStatus = "Normal";
-    let hba1cStatus = "Normal";
-
-    /**
-     * Basic screening logic.
-     * You can adjust this based on your clinical cut-off rule.
-     */
-    if (
-      (fpg !== null && fpg >= 126) ||
-      (twoHourPg !== null && twoHourPg >= 200) ||
-      (randomPg !== null && randomPg >= 200)
-    ) {
-      glucoseStatus = "High";
-    } else if (fpg !== null && fpg < 70) {
-      glucoseStatus = "Low";
+    if (!allowedTypes.includes(glucoseTestType)) {
+      return res.status(400).json({
+        message:
+          "Invalid glucoseTestType. Use FPG, TWO_HOUR, RANDOM, or HBA1C.",
+      });
     }
 
-    if (hba1c !== null && hba1c >= 6.5) {
-      hba1cStatus = "High";
-    } else if (hba1c !== null && hba1c < 4) {
-      hba1cStatus = "Low";
+    const value = Number(glucoseValue);
+
+    if (Number.isNaN(value) || value <= 0) {
+      return res.status(400).json({
+        message: "glucoseValue must be a valid positive number.",
+      });
+    }
+
+    let fpg: number | null = null;
+    let twoHourPg: number | null = null;
+    let randomPg: number | null = null;
+    let hba1c: number | null = null;
+
+    let glucoseStatus = "Normal";
+    let hba1cStatus = "Not Checked";
+
+    if (glucoseTestType === "FPG") {
+      fpg = value;
+
+      if (value < 70) {
+        glucoseStatus = "Low";
+      } else if (value >= 126) {
+        glucoseStatus = "Diabetes Risk";
+      } else if (value >= 100 && value <= 125) {
+        glucoseStatus = "Prediabetes";
+      } else {
+        glucoseStatus = "Normal";
+      }
+    }
+
+    if (glucoseTestType === "TWO_HOUR") {
+      twoHourPg = value;
+
+      if (value >= 200) {
+        glucoseStatus = "Diabetes Risk";
+      } else if (value >= 140 && value <= 199) {
+        glucoseStatus = "Prediabetes";
+      } else {
+        glucoseStatus = "Normal";
+      }
+    }
+
+    if (glucoseTestType === "RANDOM") {
+      randomPg = value;
+
+      if (value >= 200 && hasClassicSymptoms === true) {
+        glucoseStatus = "Diabetes Risk";
+      } else if (value >= 200 && hasClassicSymptoms !== true) {
+        glucoseStatus = "Need Confirmation";
+      } else if (value < 70) {
+        glucoseStatus = "Low";
+      } else {
+        glucoseStatus = "Normal";
+      }
+    }
+
+    if (glucoseTestType === "HBA1C") {
+      hba1c = value;
+      glucoseStatus = "Not Checked";
+
+      if (value >= 6.5) {
+        hba1cStatus = "Diabetes Risk";
+      } else if (value >= 5.7 && value <= 6.4) {
+        hba1cStatus = "Prediabetes";
+      } else if (value < 4) {
+        hba1cStatus = "Low";
+      } else {
+        hba1cStatus = "Normal";
+      }
     }
 
     const biochemical = await prisma.biochemicalAssessment.upsert({
-      where: {
-        screeningId,
-      },
+      where: { screeningId },
       update: {
         fastingGlucoseMgDl: fpg,
         postprandialGlucoseMgDl: twoHourPg,
@@ -271,9 +360,7 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
     });
 
     await prisma.screeningSession.update({
-      where: {
-        screeningId,
-      },
+      where: { screeningId },
       data: {
         screeningStatus: "biochemical_completed",
       },
@@ -281,62 +368,18 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
 
     return res.status(201).json({
       message: "Biochemical data saved successfully",
-      data: biochemical,
+      data: {
+        ...biochemical,
+        glucoseTestType,
+        glucoseValue: value,
+        finalGlucoseStatus:
+          glucoseTestType === "HBA1C" ? hba1cStatus : glucoseStatus,
+      },
     });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
       message: "Failed to save biochemical data",
-    });
-  }
-});
-
-screeningRoutes.get("/:screeningId/blood-glucose-status", async (req, res) => {
-  try {
-    const screeningId = Number(req.params.screeningId);
-
-    const biochemical = await prisma.biochemicalAssessment.findUnique({
-      where: {
-        screeningId,
-      },
-    });
-
-    if (!biochemical) {
-      return res.status(404).json({
-        message: "Biochemical data not found",
-      });
-    }
-
-    let diagnosis = "Normal";
-
-    if (
-      biochemical.glucoseStatus === "High" ||
-      biochemical.hba1cStatus === "High"
-    ) {
-      diagnosis = "High";
-    } else if (
-      biochemical.glucoseStatus === "Low" ||
-      biochemical.hba1cStatus === "Low"
-    ) {
-      diagnosis = "Low";
-    }
-
-    return res.json({
-      message: "Blood glucose status retrieved successfully",
-      data: {
-        diagnosis,
-        glucoseStatus: biochemical.glucoseStatus,
-        hba1cStatus: biochemical.hba1cStatus,
-        fastingGlucoseMgDl: biochemical.fastingGlucoseMgDl,
-        postprandialGlucoseMgDl: biochemical.postprandialGlucoseMgDl,
-        randomGlucoseMgDl: biochemical.randomGlucoseMgDl,
-        hba1cPercent: biochemical.hba1cPercent,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "Failed to retrieve blood glucose status",
     });
   }
 });
@@ -418,13 +461,25 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
       },
     });
 
+    const glucoseStatus = screening.biochemicalAssessment?.glucoseStatus;
+    const hba1cStatus = screening.biochemicalAssessment?.hba1cStatus;
+
     let diabetesStatus = "Normal";
 
-    if (
-      screening.biochemicalAssessment?.glucoseStatus === "High" ||
-      screening.biochemicalAssessment?.hba1cStatus === "High"
-    ) {
+    if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
       diabetesStatus = "Diabetes Mellitus Risk";
+    } else if (
+      glucoseStatus === "Prediabetes" ||
+      hba1cStatus === "Prediabetes"
+    ) {
+      diabetesStatus = "Prediabetes Risk";
+    } else if (
+      glucoseStatus === "Need Confirmation" ||
+      hba1cStatus === "Need Confirmation"
+    ) {
+      diabetesStatus = "Need Confirmation";
+    } else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
+      diabetesStatus = "Low Blood Sugar";
     }
 
     const hypertensionStatus =
@@ -495,13 +550,25 @@ screeningRoutes.get("/:screeningId/clinical-analysis", async (req, res) => {
         ? "Normal"
         : "Hypertension";
 
+    const glucoseStatus = screening.biochemicalAssessment?.glucoseStatus;
+    const hba1cStatus = screening.biochemicalAssessment?.hba1cStatus;
+
     let diabetesDiagnosis = "Normal";
 
-    if (
-      screening.biochemicalAssessment?.glucoseStatus === "High" ||
-      screening.biochemicalAssessment?.hba1cStatus === "High"
-    ) {
+    if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
       diabetesDiagnosis = "Diabetes Mellitus Risk";
+    } else if (
+      glucoseStatus === "Prediabetes" ||
+      hba1cStatus === "Prediabetes"
+    ) {
+      diabetesDiagnosis = "Prediabetes Risk";
+    } else if (
+      glucoseStatus === "Need Confirmation" ||
+      hba1cStatus === "Need Confirmation"
+    ) {
+      diabetesDiagnosis = "Need Confirmation";
+    } else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
+      diabetesDiagnosis = "Low Blood Sugar";
     }
 
     return res.json({
@@ -664,6 +731,9 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
     const client = screening.client;
     const anthropometry = screening.anthropometryAssessment;
     const result = screening.screeningResult;
+    const diabetesStatus = result.diabetesStatus ?? "Normal";
+    const hypertensionStatus = result.hypertensionStatus ?? "Normal";
+    const obesityStatus = result.obesityStatus ?? "Normal";
 
     const { dailyEnergyKcal, carbohydrateGram, fatGram, proteinGram } =
       calculateEnergyRequirement({
@@ -672,9 +742,9 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
         age: client.age,
         gender: client.gender,
         activityLevel,
-        diabetesStatus: result.diabetesStatus,
-        hypertensionStatus: result.hypertensionStatus,
-        obesityStatus: result.obesityStatus,
+        diabetesStatus,
+        hypertensionStatus,
+        obesityStatus,
       });
 
     const physicalActivity = await prisma.physicalActivityAssessment.upsert({

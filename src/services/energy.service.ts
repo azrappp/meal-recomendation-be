@@ -11,7 +11,7 @@ type EnergyCalculationInput = {
   obesityStatus?: string | null;
 };
 
-function getDMActivityFactor(activityLevel: string): number {
+function getBasicActivityFactor(activityLevel: string): number {
   const level = normalizeText(activityLevel);
 
   if (level.includes("sangat rendah") || level.includes("sedentary")) {
@@ -25,9 +25,11 @@ function getDMActivityFactor(activityLevel: string): number {
   if (level.includes("sedang")) {
     return 0.3;
   }
+
   if (level.includes("sangat tinggi")) {
     return 0.5;
   }
+
   if (level.includes("tinggi")) {
     return 0.4;
   }
@@ -88,7 +90,7 @@ function calculateDMEnergy({
 
   basalEnergy = basalEnergy - basalEnergy * ageReduction;
 
-  const activityFactor = getDMActivityFactor(activityLevel);
+  const activityFactor = getBasicActivityFactor(activityLevel);
 
   let totalEnergy = basalEnergy + basalEnergy * activityFactor;
 
@@ -131,6 +133,49 @@ function calculateHypertensionEnergy({
   return Math.round(totalEnergy);
 }
 
+function calculateNormalEnergy({
+  weight,
+  age,
+  gender,
+  activityLevel,
+  obesityStatus,
+}: EnergyCalculationInput): number {
+  const normalizedGender = normalizeText(gender);
+  const obesityText = normalizeText(obesityStatus);
+
+  const hasObesity =
+    obesityText.includes("obesity") ||
+    obesityText.includes("obesitas") ||
+    obesityText.includes("central obesity");
+
+  let basalEnergy =
+    normalizedGender.includes("laki") || normalizedGender.includes("male")
+      ? 30 * weight
+      : 25 * weight;
+
+  let ageReduction = 0;
+
+  if (age >= 40 && age <= 59) {
+    ageReduction = 0.05;
+  } else if (age >= 60 && age <= 69) {
+    ageReduction = 0.1;
+  } else if (age >= 70) {
+    ageReduction = 0.2;
+  }
+
+  basalEnergy = basalEnergy - basalEnergy * ageReduction;
+
+  const activityFactor = getBasicActivityFactor(activityLevel);
+
+  let totalEnergy = basalEnergy + basalEnergy * activityFactor;
+
+  if (hasObesity) {
+    totalEnergy = totalEnergy - totalEnergy * 0.2;
+  }
+
+  return Math.round(totalEnergy);
+}
+
 export function calculateEnergyRequirement(input: EnergyCalculationInput) {
   const diabetesText = normalizeText(input.diabetesStatus);
   const hypertensionText = normalizeText(input.hypertensionStatus);
@@ -149,9 +194,7 @@ export function calculateEnergyRequirement(input: EnergyCalculationInput) {
   } else if (hasHypertension) {
     dailyEnergyKcal = calculateHypertensionEnergy(input);
   } else {
-    throw new Error(
-      "Screening result must indicate DM or hypertension before calculating energy requirement",
-    );
+    dailyEnergyKcal = calculateNormalEnergy(input);
   }
 
   const macros = calculateMacros(dailyEnergyKcal);
