@@ -947,55 +947,6 @@ screeningRoutes.get("/clients/:clientId/history", async (req, res) => {
   }
 });
 
-screeningRoutes.post("/:clientId/new-screening", async (req, res) => {
-  try {
-    const clientId = Number(req.params.clientId);
-
-    if (!Number.isInteger(clientId) || clientId <= 0) {
-      return res.status(400).json({
-        message: "Valid clientId is required",
-      });
-    }
-
-    const client = await prisma.client.findUnique({
-      where: {
-        clientId,
-      },
-    });
-
-    if (!client) {
-      return res.status(404).json({
-        message: "Client not found",
-      });
-    }
-
-    const screening = await prisma.screeningSession.create({
-      data: {
-        clientId,
-        screeningDate: new Date(),
-        screeningStatus: "weekly_screening_started",
-      },
-    });
-
-    return res.status(201).json({
-      message: "Weekly screening session started successfully",
-      data: {
-        screeningId: screening.screeningId,
-        clientId: screening.clientId,
-        screeningDate: screening.screeningDate,
-        screeningStatus: screening.screeningStatus,
-      },
-    });
-  } catch (error: unknown) {
-    console.error(error);
-
-    return res.status(500).json({
-      message: "Failed to start weekly screening session",
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
 screeningRoutes.delete("/:screeningId", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
@@ -1161,6 +1112,256 @@ screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
     return res.status(500).json({
       message: "Failed to save weekly anthropometry data",
       error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+screeningRoutes.get("/client/:clientId", async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+
+    if (Number.isNaN(clientId)) {
+      return res.status(400).json({
+        message: "Invalid clientId",
+      });
+    }
+
+    const client = await prisma.client.findUnique({
+      where: { clientId },
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        message: "Client not found",
+      });
+    }
+
+    const screenings = await prisma.screeningSession.findMany({
+      where: { clientId },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        screeningId: true,
+        clientId: true,
+        screeningStatus: true,
+        createdAt: true,
+        updatedAt: true,
+
+        screeningResult: {
+          select: {
+            resultId: true,
+            diabetesStatus: true,
+            hypertensionStatus: true,
+            obesityStatus: true,
+            finalScreeningCategory: true,
+            referralRequired: true,
+            referralReason: true,
+            screeningSummary: true,
+            generatedAt: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: "Client screening data retrieved successfully",
+      data: screenings,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve client screening data",
+    });
+  }
+});
+
+screeningRoutes.get("/:screeningId/detail", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+
+    if (Number.isNaN(screeningId)) {
+      return res.status(400).json({
+        message: "Invalid screeningId",
+      });
+    }
+
+    const screening = await prisma.screeningSession.findUnique({
+      where: { screeningId },
+      include: {
+        client: true,
+        anthropometryAssessment: true,
+        biochemicalAssessment: true,
+        clinicalAssessment: true,
+        physicalActivityAssessment: true,
+        energyRequirement: true,
+        screeningResult: true,
+      },
+    });
+
+    if (!screening) {
+      return res.status(404).json({
+        message: "Screening session not found",
+      });
+    }
+
+    return res.json({
+      message: "Screening detail retrieved successfully",
+      data: screening,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve screening detail",
+    });
+  }
+});
+
+screeningRoutes.get("/:screeningId/menu-recommendations", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+
+    if (Number.isNaN(screeningId)) {
+      return res.status(400).json({
+        message: "Invalid screeningId",
+      });
+    }
+
+    const recommendations = await prisma.menuRecommendation.findMany({
+      where: { screeningId },
+      orderBy: {
+        generatedAt: "desc",
+      },
+      include: {
+        days: {
+          orderBy: {
+            dayNumber: "asc",
+          },
+          include: {
+            items: {
+              orderBy: [{ mealTime: "asc" }, { categoryCode: "asc" }],
+            },
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: "Menu recommendations retrieved successfully",
+      data: recommendations,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve menu recommendations",
+    });
+  }
+});
+
+screeningRoutes.delete(
+  "/menu-recommendations/:menuRecommendationId",
+  async (req, res) => {
+    try {
+      const menuRecommendationId = Number(req.params.menuRecommendationId);
+
+      if (Number.isNaN(menuRecommendationId)) {
+        return res.status(400).json({
+          message: "Invalid menuRecommendationId",
+        });
+      }
+
+      const existing = await prisma.menuRecommendation.findUnique({
+        where: { menuRecommendationId },
+      });
+
+      if (!existing) {
+        return res.status(404).json({
+          message: "Menu recommendation not found",
+        });
+      }
+
+      await prisma.menuRecommendation.delete({
+        where: { menuRecommendationId },
+      });
+
+      return res.json({
+        message: "Menu recommendation deleted successfully",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to delete menu recommendation",
+      });
+    }
+  },
+);
+
+screeningRoutes.delete("/menu-recommendations", async (req, res) => {
+  try {
+    const { menuRecommendationIds } = req.body;
+
+    if (
+      !Array.isArray(menuRecommendationIds) ||
+      menuRecommendationIds.length === 0
+    ) {
+      return res.status(400).json({
+        message: "menuRecommendationIds must be a non-empty array",
+      });
+    }
+
+    const ids = menuRecommendationIds.map(Number);
+
+    if (ids.some((id) => Number.isNaN(id))) {
+      return res.status(400).json({
+        message: "All menuRecommendationIds must be valid numbers",
+      });
+    }
+
+    const existingMenus = await prisma.menuRecommendation.findMany({
+      where: {
+        menuRecommendationId: {
+          in: ids,
+        },
+      },
+      select: {
+        menuRecommendationId: true,
+        screeningId: true,
+      },
+    });
+
+    if (existingMenus.length === 0) {
+      return res.status(404).json({
+        message: "No selected menu recommendations found",
+      });
+    }
+
+    const existingIds = existingMenus.map((menu) => menu.menuRecommendationId);
+
+    const deleted = await prisma.menuRecommendation.deleteMany({
+      where: {
+        menuRecommendationId: {
+          in: existingIds,
+        },
+      },
+    });
+
+    return res.json({
+      message: "Selected menu recommendations deleted successfully",
+      data: {
+        requestedIds: ids,
+        deletedIds: existingIds,
+        deletedCount: deleted.count,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to delete selected menu recommendations",
     });
   }
 });

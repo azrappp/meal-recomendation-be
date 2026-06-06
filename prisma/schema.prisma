@@ -181,6 +181,7 @@ model MenuRecommendation {
 
   @@map("menu_recommendations")
 }
+
 model MenuRecommendationDay {
   menuDayId            Int      @id @default(autoincrement()) @map("menu_day_id")
   menuRecommendationId Int      @map("menu_recommendation_id")
