@@ -23,5 +23,7 @@ app.get("/api/vercel-test", (req, res) => {
 app.use("/api/clients", clientRoutes);
 app.use("/api/screening", screeningRoutes);
 app.use("/api/meal", mealRecommendationRoutes);
-
+app.listen(3000, () => {
+  console.log("Server is running on port 3000");
+});
 export default app;

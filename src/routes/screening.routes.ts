@@ -1364,3 +1364,250 @@ screeningRoutes.delete("/menu-recommendations", async (req, res) => {
     });
   }
 });
+
+screeningRoutes.get("/:screeningId/daily-menus", async (req, res) => {
+  try {
+    const screeningId = Number(req.params.screeningId);
+
+    if (Number.isNaN(screeningId)) {
+      return res.status(400).json({
+        message: "Invalid screeningId",
+      });
+    }
+
+    const screening = await prisma.screeningSession.findUnique({
+      where: { screeningId },
+      select: {
+        screeningId: true,
+      },
+    });
+
+    if (!screening) {
+      return res.status(404).json({
+        message: "Screening session not found",
+      });
+    }
+
+    const recommendations = await prisma.menuRecommendation.findMany({
+      where: { screeningId },
+      orderBy: {
+        generatedAt: "desc",
+      },
+      select: {
+        menuRecommendationId: true,
+        screeningId: true,
+        dietType: true,
+        targetEnergyKcal: true,
+        targetCarbohydrateG: true,
+        targetProteinG: true,
+        targetFatG: true,
+        totalDays: true,
+        generationStatus: true,
+        generatedAt: true,
+
+        days: {
+          orderBy: {
+            dayNumber: "asc",
+          },
+          select: {
+            menuDayId: true,
+            dayNumber: true,
+            menuDate: true,
+            energyKcal: true,
+            proteinG: true,
+            fatG: true,
+            carbG: true,
+            sodiumMg: true,
+            fiberG: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: "Daily menu list retrieved successfully",
+      data: recommendations,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve daily menu list",
+    });
+  }
+});
+
+screeningRoutes.get("/client/:clientId/menu-days", async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+
+    if (Number.isNaN(clientId)) {
+      return res.status(400).json({
+        message: "Invalid clientId",
+      });
+    }
+
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+    const skip = (page - 1) * limit;
+
+    const client = await prisma.client.findUnique({
+      where: { clientId },
+      select: {
+        clientId: true,
+        fullName: true,
+      },
+    });
+
+    if (!client) {
+      return res.status(404).json({
+        message: "Client not found",
+      });
+    }
+
+    const where = {
+      menuRecommendation: {
+        screeningSession: {
+          clientId,
+        },
+      },
+    };
+
+    const [total, menuDays] = await Promise.all([
+      prisma.menuRecommendationDay.count({
+        where,
+      }),
+
+      prisma.menuRecommendationDay.findMany({
+        where,
+        orderBy: {
+          menuDate: "desc",
+        },
+        skip,
+        take: limit,
+        select: {
+          menuDayId: true,
+          dayNumber: true,
+          menuDate: true,
+
+          energyKcal: true,
+          proteinG: true,
+          fatG: true,
+          carbG: true,
+          sodiumMg: true,
+          fiberG: true,
+
+          menuRecommendation: {
+            select: {
+              menuRecommendationId: true,
+              dietType: true,
+              targetEnergyKcal: true,
+              generatedAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return res.json({
+      message: "Client menu days retrieved successfully",
+      data: {
+        client,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page * limit < total,
+          hasPreviousPage: page > 1,
+        },
+        menuDays,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve client menu days",
+    });
+  }
+});
+
+screeningRoutes.delete("/client/:clientId/menu-days", async (req, res) => {
+  try {
+    const clientId = Number(req.params.clientId);
+    const { menuDayIds } = req.body;
+
+    if (Number.isNaN(clientId)) {
+      return res.status(400).json({
+        message: "Invalid clientId",
+      });
+    }
+
+    if (!Array.isArray(menuDayIds) || menuDayIds.length === 0) {
+      return res.status(400).json({
+        message: "menuDayIds must be a non-empty array",
+      });
+    }
+
+    const ids = menuDayIds.map(Number);
+
+    if (ids.some((id) => Number.isNaN(id))) {
+      return res.status(400).json({
+        message: "All menuDayIds must be valid numbers",
+      });
+    }
+
+    const existingDays = await prisma.menuRecommendationDay.findMany({
+      where: {
+        menuDayId: {
+          in: ids,
+        },
+        menuRecommendation: {
+          screeningSession: {
+            clientId,
+          },
+        },
+      },
+      select: {
+        menuDayId: true,
+      },
+    });
+
+    if (existingDays.length === 0) {
+      return res.status(404).json({
+        message: "No selected menu days found for this client",
+      });
+    }
+
+    const existingIds = existingDays.map((day) => day.menuDayId);
+
+    const deleted = await prisma.menuRecommendationDay.deleteMany({
+      where: {
+        menuDayId: {
+          in: existingIds,
+        },
+        menuRecommendation: {
+          screeningSession: {
+            clientId,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: "Selected menu days deleted successfully",
+      data: {
+        requestedIds: ids,
+        deletedIds: existingIds,
+        deletedCount: deleted.count,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to delete selected menu days",
+    });
+  }
+});

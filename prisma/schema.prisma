@@ -147,7 +147,6 @@ model ScreeningResult {
 model EnergyRequirement {
   energyRequirementId Int      @id @default(autoincrement()) @map("energy_requirement_id")
   screeningId         Int      @unique @map("screening_id")
-
   dailyEnergyKcal     Float    @map("daily_energy_kcal")
   carbohydrateGram    Float    @map("carbohydrate_gram")
   fatGram             Float    @map("fat_gram")
@@ -203,6 +202,7 @@ model MenuRecommendationDay {
   @@unique([menuRecommendationId, menuDate])
   @@map("menu_recommendation_days")
 }
+
 model MenuRecommendationItem {
   menuItemId Int @id @default(autoincrement()) @map("menu_item_id")
   menuDayId  Int @map("menu_day_id")
