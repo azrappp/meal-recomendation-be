@@ -1489,7 +1489,6 @@ screeningRoutes.get("/client/:clientId/menu-days", async (req, res) => {
           menuDayId: true,
           dayNumber: true,
           menuDate: true,
-
           energyKcal: true,
           proteinG: true,
           fatG: true,
@@ -1608,6 +1607,104 @@ screeningRoutes.delete("/client/:clientId/menu-days", async (req, res) => {
 
     return res.status(500).json({
       message: "Failed to delete selected menu days",
+    });
+  }
+});
+
+screeningRoutes.get("/menu-days/:menuDayId", async (req, res) => {
+  try {
+    const menuDayId = Number(req.params.menuDayId);
+
+    if (Number.isNaN(menuDayId)) {
+      return res.status(400).json({
+        message: "Invalid menuDayId",
+      });
+    }
+
+    const menuDay = await prisma.menuRecommendationDay.findUnique({
+      where: {
+        menuDayId,
+      },
+      select: {
+        menuDayId: true,
+        menuRecommendationId: true,
+        dayNumber: true,
+        menuDate: true,
+
+        energyKcal: true,
+        proteinG: true,
+        fatG: true,
+        carbG: true,
+        sodiumMg: true,
+        fiberG: true,
+
+        menuRecommendation: {
+          select: {
+            menuRecommendationId: true,
+            screeningId: true,
+            dietType: true,
+            targetEnergyKcal: true,
+            targetCarbohydrateG: true,
+            targetProteinG: true,
+            targetFatG: true,
+            sodiumMaxMg: true,
+            fiberMinG: true,
+            generatedAt: true,
+          },
+        },
+
+        items: {
+          orderBy: [
+            {
+              mealTime: "asc",
+            },
+            {
+              categoryCode: "asc",
+            },
+            {
+              foodName: "asc",
+            },
+          ],
+          select: {
+            menuItemId: true,
+            mealTime: true,
+            foodName: true,
+            categoryCode: true,
+
+            portion: true,
+            urt: true,
+            gram: true,
+
+            energyKcal: true,
+            proteinG: true,
+            fatG: true,
+            carbG: true,
+            sodiumMg: true,
+            fiberG: true,
+
+            isEaten: true,
+            eatenAt: true,
+            userNote: true,
+          },
+        },
+      },
+    });
+
+    if (!menuDay) {
+      return res.status(404).json({
+        message: "Menu day not found",
+      });
+    }
+
+    return res.json({
+      message: "Menu day detail retrieved successfully",
+      data: menuDay,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve menu day detail",
     });
   }
 });
