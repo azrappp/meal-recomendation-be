@@ -65,9 +65,31 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
       });
     }
 
-    const weight = Number(weightKg);
-    const height = Number(heightCm);
-    const waist = waistCircumferenceCm ? Number(waistCircumferenceCm) : null;
+    const weight = Number(String(weightKg).replace(",", "."));
+    const height = Number(String(heightCm).replace(",", "."));
+    const waist =
+      waistCircumferenceCm !== undefined &&
+      waistCircumferenceCm !== null &&
+      waistCircumferenceCm !== ""
+        ? Number(String(waistCircumferenceCm).replace(",", "."))
+        : null;
+
+    if (
+      Number.isNaN(weight) ||
+      Number.isNaN(height) ||
+      weight <= 0 ||
+      height <= 0
+    ) {
+      return res.status(400).json({
+        message: "weightKg and heightCm must be valid numbers",
+      });
+    }
+
+    if (waist !== null && (Number.isNaN(waist) || waist <= 0)) {
+      return res.status(400).json({
+        message: "waistCircumferenceCm must be a valid number",
+      });
+    }
 
     const heightMeter = height / 100;
     const bmi = weight / (heightMeter * heightMeter);
@@ -242,6 +264,7 @@ screeningRoutes.get("/:screeningId/blood-glucose-status", async (req, res) => {
     });
   }
 });
+
 screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
