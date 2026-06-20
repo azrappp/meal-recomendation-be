@@ -1642,3 +1642,230 @@ mealRecommendationRoutes.get(
     }
   },
 );
+
+mealRecommendationRoutes.get(
+  "/clients/:clientId/nutrition-progress",
+  async (req, res) => {
+    try {
+      const clientId = Number(req.params.clientId);
+      const { startDate, endDate } = req.query;
+
+      if (!Number.isInteger(clientId) || clientId <= 0) {
+        return res.status(400).json({
+          message: "Valid clientId is required",
+        });
+      }
+
+      if (typeof startDate !== "string" || typeof endDate !== "string") {
+        return res.status(400).json({
+          message: "startDate and endDate are required. Format: YYYY-MM-DD",
+        });
+      }
+
+      const start = new Date(`${startDate}T00:00:00.000Z`);
+      const end = new Date(`${endDate}T23:59:59.999Z`);
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return res.status(400).json({
+          message: "Invalid date format. Use YYYY-MM-DD",
+        });
+      }
+
+      const days = await prisma.menuRecommendationDay.findMany({
+        where: {
+          menuDate: {
+            gte: start,
+            lte: end,
+          },
+          menuRecommendation: {
+            screeningSession: {
+              clientId,
+            },
+          },
+        },
+        orderBy: {
+          menuDate: "asc",
+        },
+        select: {
+          menuDayId: true,
+          dayNumber: true,
+          menuDate: true,
+
+          energyKcal: true,
+          proteinG: true,
+          fatG: true,
+          carbG: true,
+          sodiumMg: true,
+          fiberG: true,
+
+          eatenEnergyKcal: true,
+          eatenProteinG: true,
+          eatenFatG: true,
+          eatenCarbG: true,
+          eatenSodiumMg: true,
+          eatenFiberG: true,
+        },
+      });
+
+      const chartData = days.map((day) => {
+        const energyPercent =
+          day.energyKcal > 0 ? (day.eatenEnergyKcal / day.energyKcal) * 100 : 0;
+
+        const proteinPercent =
+          day.proteinG > 0 ? (day.eatenProteinG / day.proteinG) * 100 : 0;
+
+        const fatPercent = day.fatG > 0 ? (day.eatenFatG / day.fatG) * 100 : 0;
+
+        const carbPercent =
+          day.carbG > 0 ? (day.eatenCarbG / day.carbG) * 100 : 0;
+
+        const sodiumPercent =
+          day.sodiumMg > 0 ? (day.eatenSodiumMg / day.sodiumMg) * 100 : 0;
+
+        const fiberPercent =
+          day.fiberG > 0 ? (day.eatenFiberG / day.fiberG) * 100 : 0;
+
+        return {
+          menuDayId: day.menuDayId,
+          dayNumber: day.dayNumber,
+          menuDate: day.menuDate,
+
+          energy: {
+            target: Number(day.energyKcal.toFixed(2)),
+            eaten: Number(day.eatenEnergyKcal.toFixed(2)),
+            percent: Number(energyPercent.toFixed(2)),
+            unit: "kcal",
+          },
+
+          protein: {
+            target: Number(day.proteinG.toFixed(2)),
+            eaten: Number(day.eatenProteinG.toFixed(2)),
+            percent: Number(proteinPercent.toFixed(2)),
+            unit: "g",
+          },
+
+          fat: {
+            target: Number(day.fatG.toFixed(2)),
+            eaten: Number(day.eatenFatG.toFixed(2)),
+            percent: Number(fatPercent.toFixed(2)),
+            unit: "g",
+          },
+
+          carbohydrate: {
+            target: Number(day.carbG.toFixed(2)),
+            eaten: Number(day.eatenCarbG.toFixed(2)),
+            percent: Number(carbPercent.toFixed(2)),
+            unit: "g",
+          },
+
+          sodium: {
+            target: Number(day.sodiumMg.toFixed(2)),
+            eaten: Number(day.eatenSodiumMg.toFixed(2)),
+            percent: Number(sodiumPercent.toFixed(2)),
+            unit: "mg",
+          },
+
+          fiber: {
+            target: Number(day.fiberG.toFixed(2)),
+            eaten: Number(day.eatenFiberG.toFixed(2)),
+            percent: Number(fiberPercent.toFixed(2)),
+            unit: "g",
+          },
+        };
+      });
+
+      const summary = days.reduce(
+        (acc, day) => {
+          acc.targetEnergyKcal += day.energyKcal;
+          acc.eatenEnergyKcal += day.eatenEnergyKcal;
+
+          acc.targetProteinG += day.proteinG;
+          acc.eatenProteinG += day.eatenProteinG;
+
+          acc.targetFatG += day.fatG;
+          acc.eatenFatG += day.eatenFatG;
+
+          acc.targetCarbG += day.carbG;
+          acc.eatenCarbG += day.eatenCarbG;
+
+          acc.targetSodiumMg += day.sodiumMg;
+          acc.eatenSodiumMg += day.eatenSodiumMg;
+
+          acc.targetFiberG += day.fiberG;
+          acc.eatenFiberG += day.eatenFiberG;
+
+          return acc;
+        },
+        {
+          targetEnergyKcal: 0,
+          eatenEnergyKcal: 0,
+
+          targetProteinG: 0,
+          eatenProteinG: 0,
+
+          targetFatG: 0,
+          eatenFatG: 0,
+
+          targetCarbG: 0,
+          eatenCarbG: 0,
+
+          targetSodiumMg: 0,
+          eatenSodiumMg: 0,
+
+          targetFiberG: 0,
+          eatenFiberG: 0,
+        },
+      );
+
+      return res.status(200).json({
+        message: "Nutrition progress retrieved successfully",
+        data: {
+          clientId,
+          startDate,
+          endDate,
+          totalDays: days.length,
+          summary: {
+            energy: {
+              target: Number(summary.targetEnergyKcal.toFixed(2)),
+              eaten: Number(summary.eatenEnergyKcal.toFixed(2)),
+              unit: "kcal",
+            },
+            protein: {
+              target: Number(summary.targetProteinG.toFixed(2)),
+              eaten: Number(summary.eatenProteinG.toFixed(2)),
+              unit: "g",
+            },
+            fat: {
+              target: Number(summary.targetFatG.toFixed(2)),
+              eaten: Number(summary.eatenFatG.toFixed(2)),
+              unit: "g",
+            },
+            carbohydrate: {
+              target: Number(summary.targetCarbG.toFixed(2)),
+              eaten: Number(summary.eatenCarbG.toFixed(2)),
+              unit: "g",
+            },
+            sodium: {
+              target: Number(summary.targetSodiumMg.toFixed(2)),
+              eaten: Number(summary.eatenSodiumMg.toFixed(2)),
+              unit: "mg",
+            },
+            fiber: {
+              target: Number(summary.targetFiberG.toFixed(2)),
+              eaten: Number(summary.eatenFiberG.toFixed(2)),
+              unit: "g",
+            },
+          },
+          chartData,
+        },
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to get nutrition progress",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
