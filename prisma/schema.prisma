@@ -195,6 +195,13 @@ model MenuRecommendationDay {
   sodiumMg             Float    @map("sodium_mg")
   fiberG               Float    @map("fiber_g")
 
+  eatenEnergyKcal      Float    @default(0) @map("eaten_energy_kcal")
+  eatenProteinG        Float    @default(0) @map("eaten_protein_g")
+  eatenFatG            Float    @default(0) @map("eaten_fat_g")
+  eatenCarbG           Float    @default(0) @map("eaten_carb_g")
+  eatenSodiumMg        Float    @default(0) @map("eaten_sodium_mg")
+  eatenFiberG          Float    @default(0) @map("eaten_fiber_g")
+  
   menuRecommendation MenuRecommendation @relation(fields: [menuRecommendationId], references: [menuRecommendationId], onDelete: Cascade)
   items              MenuRecommendationItem[]
 

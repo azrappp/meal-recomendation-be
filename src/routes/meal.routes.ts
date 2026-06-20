@@ -1288,22 +1288,74 @@ mealRecommendationRoutes.patch("/items/:menuItemId/eaten", async (req, res) => {
       });
     }
 
-    const updatedItem = await prisma.menuRecommendationItem.update({
-      where: {
-        menuItemId,
-      },
-      data: {
-        isEaten,
-        eatenAt: isEaten ? new Date() : null,
-        ...(userNote !== undefined && { userNote }),
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedItem = await tx.menuRecommendationItem.update({
+        where: {
+          menuItemId,
+        },
+        data: {
+          isEaten,
+          eatenAt: isEaten ? new Date() : null,
+          ...(userNote !== undefined && { userNote }),
+        },
+      });
+
+      let multiplier = 0;
+
+      if (existingItem.isEaten === false && isEaten === true) {
+        multiplier = 1;
+      } else if (existingItem.isEaten === true && isEaten === false) {
+        multiplier = -1;
+      }
+
+      if (multiplier !== 0) {
+        await tx.menuRecommendationDay.update({
+          where: {
+            menuDayId: existingItem.menuDayId,
+          },
+          data: {
+            eatenEnergyKcal: {
+              increment: existingItem.energyKcal * multiplier,
+            },
+            eatenProteinG: {
+              increment: existingItem.proteinG * multiplier,
+            },
+            eatenFatG: {
+              increment: existingItem.fatG * multiplier,
+            },
+            eatenCarbG: {
+              increment: existingItem.carbG * multiplier,
+            },
+            eatenSodiumMg: {
+              increment: existingItem.sodiumMg * multiplier,
+            },
+            eatenFiberG: {
+              increment: existingItem.fiberG * multiplier,
+            },
+          },
+        });
+      }
+
+      const updatedDay = await tx.menuRecommendationDay.findUnique({
+        where: {
+          menuDayId: existingItem.menuDayId,
+        },
+        include: {
+          items: true,
+        },
+      });
+
+      return {
+        updatedItem,
+        updatedDay,
+      };
     });
 
     return res.status(200).json({
       message: isEaten
         ? "Menu item marked as eaten"
         : "Menu item marked as not eaten",
-      data: updatedItem,
+      data: result,
     });
   } catch (error: unknown) {
     console.error(error);
