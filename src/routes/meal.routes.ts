@@ -560,6 +560,173 @@ mealRecommendationRoutes.post("/:screeningId/menu", async (req, res) => {
   }
 });
 
+mealRecommendationRoutes.post(
+  "/client/:clientId/menu-weekly",
+  async (req, res) => {
+    try {
+      const clientId = Number(req.params.clientId);
+
+      const { startDate } = (req.body ?? {}) as { startDate?: string };
+
+      const baseDate = startDate ? new Date(startDate) : new Date();
+
+      if (Number.isNaN(baseDate.getTime())) {
+        return res.status(400).json({
+          message: "Invalid startDate format. Use YYYY-MM-DD.",
+        });
+      }
+
+      if (!Number.isInteger(clientId) || clientId <= 0) {
+        return res.status(400).json({
+          message: "Valid clientId is required",
+        });
+      }
+
+      /**
+       * Ambil screening terbaru milik client.
+       * Jika model ScreeningSession punya createdAt, gunakan createdAt desc.
+       * Jika tidak punya createdAt, cukup pakai screeningId desc.
+       */
+      const latestScreening = await prisma.screeningSession.findFirst({
+        where: {
+          clientId,
+        },
+        orderBy: [
+          {
+            screeningId: "desc",
+          },
+        ],
+        include: {
+          client: true,
+          screeningResult: true,
+          energyRequirement: true,
+        },
+      });
+
+      if (!latestScreening) {
+        return res.status(404).json({
+          message: "No screening session found for this client",
+          clientId,
+        });
+      }
+
+      if (!latestScreening.screeningResult) {
+        return res.status(400).json({
+          message: "Latest screening result has not been generated",
+          clientId,
+          screeningId: latestScreening.screeningId,
+        });
+      }
+
+      if (!latestScreening.energyRequirement) {
+        return res.status(400).json({
+          message:
+            "Energy requirement has not been calculated for latest screening",
+          clientId,
+          screeningId: latestScreening.screeningId,
+        });
+      }
+
+      const screeningId = latestScreening.screeningId;
+
+      const dietType = buildDietType({
+        diabetesStatus: latestScreening.screeningResult.diabetesStatus,
+        hypertensionStatus: latestScreening.screeningResult.hypertensionStatus,
+        obesityStatus: latestScreening.screeningResult.obesityStatus,
+      });
+
+      const fastApiPayload = buildFastApiPayload({
+        dietType,
+        dailyEnergyKcal: latestScreening.energyRequirement.dailyEnergyKcal,
+        carbohydrateGram: latestScreening.energyRequirement.carbohydrateGram,
+        proteinGram: latestScreening.energyRequirement.proteinGram,
+        fatGram: latestScreening.energyRequirement.fatGram,
+      });
+
+      const weeklyHistory = {
+        usedFoodCounts: {} as Record<string, number>,
+        categoryUsedFoodCounts: {} as Record<string, Record<string, number>>,
+      };
+
+      const generatedMenus: FastApiMealResponse[] = [];
+
+      for (let day = 1; day <= 7; day++) {
+        const rotatedAllowedFoodNames = buildAllowedFoodNamesForDay(day);
+
+        const userExcludedFoods: string[] = [];
+
+        const rotatedPayload = {
+          ...fastApiPayload,
+          day_number: day,
+          allowed_food_names: rotatedAllowedFoodNames,
+          excluded_food_names: userExcludedFoods,
+
+          /**
+           * Optional.
+           * FastAPI Anda sudah punya field used_food_counts,
+           * jadi ini aman dikirim.
+           */
+          used_food_counts: weeklyHistory.usedFoodCounts,
+        };
+
+        const fastApiResponse = await fetch(
+          `${FASTAPI_BASE_URL}/recommend-menu`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(rotatedPayload),
+          },
+        );
+
+        const responseBody = await fastApiResponse.json();
+
+        if (!fastApiResponse.ok) {
+          return res.status(422).json({
+            message: `FastAPI failed to generate menu recommendation for day ${day}`,
+            clientId,
+            screeningId,
+            day,
+            dietType,
+            fastApiPayload: rotatedPayload,
+            detail: responseBody,
+          });
+        }
+
+        generatedMenus.push(responseBody);
+        updateWeeklyHistory(weeklyHistory, responseBody);
+      }
+
+      const savedWeeklyMenu = await saveGeneratedWeeklyMenu({
+        screeningId,
+        dietType,
+        fastApiPayload,
+        generatedMenus,
+        startDate: baseDate,
+      });
+
+      return res.status(201).json({
+        message:
+          "Weekly menu recommendation generated from latest screening and saved successfully",
+        clientId,
+        screeningId,
+        dietType,
+        fastApiPayload,
+        weeklyHistory,
+        data: simplifyWeeklyMenu(savedWeeklyMenu),
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Internal server error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
+
 mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
   try {
     const screeningId = Number(req.params.screeningId);
