@@ -1,5 +1,5 @@
 import { calculateMacros, normalizeText } from "../utils/nutrition.util.js";
-function getDMActivityFactor(activityLevel) {
+function getBasicActivityFactor(activityLevel) {
     const level = normalizeText(activityLevel);
     if (level.includes("sangat rendah") || level.includes("sedentary")) {
         return 0.1;
@@ -34,15 +34,20 @@ function getHypertensionActivityFactor(activityLevel) {
     }
     return 0.1;
 }
-function calculateDMEnergy({ weight, age, gender, activityLevel, obesityStatus, }) {
+function calculateDMEnergy({ weight, height, // 1. TAMBAHKAN HEIGHT DI SINI
+age, gender, activityLevel, obesityStatus, }) {
     const normalizedGender = normalizeText(gender);
-    const obesityText = normalizeText(obesityStatus);
+    const obesityText = normalizeText(obesityStatus || ""); // Cegah undefined
     const hasObesity = obesityText.includes("obesity") ||
         obesityText.includes("obesitas") ||
         obesityText.includes("central obesity");
+    // 2. HITUNG BERAT BADAN IDEAL (BBI) - Rumus Broca
+    const bbi = height - 100 - 0.1 * (height - 100);
+    // 3. TENTUKAN BERAT KALKULASI (Gunakan BBI untuk diet DM)
+    const calculationWeight = bbi;
     let basalEnergy = normalizedGender.includes("laki") || normalizedGender.includes("male")
-        ? 30 * weight
-        : 25 * weight;
+        ? 30 * calculationWeight // Kalikan dengan BBI
+        : 25 * calculationWeight; // Kalikan dengan BBI
     let ageReduction = 0;
     if (age >= 40 && age <= 59) {
         ageReduction = 0.05;
@@ -54,16 +59,19 @@ function calculateDMEnergy({ weight, age, gender, activityLevel, obesityStatus, 
         ageReduction = 0.2;
     }
     basalEnergy = basalEnergy - basalEnergy * ageReduction;
-    const activityFactor = getDMActivityFactor(activityLevel);
+    const activityFactor = getBasicActivityFactor(activityLevel);
     let totalEnergy = basalEnergy + basalEnergy * activityFactor;
     if (hasObesity) {
+        totalEnergy = totalEnergy - totalEnergy * 0.2;
+    }
+    else if (weight > calculationWeight * 1.2) {
         totalEnergy = totalEnergy - totalEnergy * 0.2;
     }
     return Math.round(totalEnergy);
 }
 function calculateHypertensionEnergy({ weight, height, age, gender, activityLevel, obesityStatus, }) {
     const normalizedGender = normalizeText(gender);
-    const hasObesity = normalizeText(obesityStatus).includes("obesitas");
+    const hasObesity = isObeseFallback(obesityStatus, weight, height);
     let rmr = 0;
     if (normalizedGender.includes("laki") || normalizedGender.includes("male")) {
         rmr = 10 * weight + 6.25 * height - 5 * age + 5;
@@ -75,6 +83,37 @@ function calculateHypertensionEnergy({ weight, height, age, gender, activityLeve
     const activityFactor = getHypertensionActivityFactor(activityLevel);
     const physicalActivityEnergy = activityFactor * rmr;
     let totalEnergy = rmr + tef + physicalActivityEnergy;
+    if (hasObesity) {
+        totalEnergy = totalEnergy - totalEnergy * 0.2;
+    }
+    return Math.round(totalEnergy);
+}
+function calculateNormalEnergy({ weight, height, // <-- WAJIB DITAMBAHKAN
+age, gender, activityLevel, obesityStatus, }) {
+    const normalizedGender = normalizeText(gender);
+    // Gunakan fungsi pengaman yang baru dibuat
+    const hasObesity = isObeseFallback(obesityStatus, weight, height);
+    // Hitung Berat Badan Ideal (BBI)
+    const bbi = height - 100 - 0.1 * (height - 100);
+    // Jika pasien Obesitas, paksa sistem menggunakan BBI sebagai basis kalori
+    const calculationWeight = hasObesity ? bbi : weight;
+    let basalEnergy = normalizedGender.includes("laki") || normalizedGender.includes("male")
+        ? 30 * calculationWeight // Menggunakan calculationWeight
+        : 25 * calculationWeight; // Menggunakan calculationWeight
+    let ageReduction = 0;
+    if (age >= 40 && age <= 59) {
+        ageReduction = 0.05;
+    }
+    else if (age >= 60 && age <= 69) {
+        ageReduction = 0.1;
+    }
+    else if (age >= 70) {
+        ageReduction = 0.2;
+    }
+    basalEnergy = basalEnergy - basalEnergy * ageReduction;
+    const activityFactor = getBasicActivityFactor(activityLevel);
+    let totalEnergy = basalEnergy + basalEnergy * activityFactor;
+    // Terapkan defisit 20% khusus untuk pasien obesitas agar berat badannya turun
     if (hasObesity) {
         totalEnergy = totalEnergy - totalEnergy * 0.2;
     }
@@ -94,11 +133,25 @@ export function calculateEnergyRequirement(input) {
         dailyEnergyKcal = calculateHypertensionEnergy(input);
     }
     else {
-        throw new Error("Screening result must indicate DM or hypertension before calculating energy requirement");
+        dailyEnergyKcal = calculateNormalEnergy(input);
     }
     const macros = calculateMacros(dailyEnergyKcal);
     return {
         dailyEnergyKcal,
         ...macros,
     };
+}
+function isObeseFallback(obesityStatus, weight, height) {
+    const obesityText = normalizeText(obesityStatus || "");
+    if (obesityText.includes("obesity") ||
+        obesityText.includes("obesitas") ||
+        obesityText.includes("central obesity")) {
+        return true;
+    }
+    const heightMeter = height / 100;
+    const bmi = weight / (heightMeter * heightMeter);
+    if (bmi >= 25) {
+        return true;
+    }
+    return false;
 }

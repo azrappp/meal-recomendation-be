@@ -202,7 +202,13 @@ export const MenuRecommendationDayScalarFieldEnum = {
     fatG: 'fatG',
     carbG: 'carbG',
     sodiumMg: 'sodiumMg',
-    fiberG: 'fiberG'
+    fiberG: 'fiberG',
+    eatenEnergyKcal: 'eatenEnergyKcal',
+    eatenProteinG: 'eatenProteinG',
+    eatenFatG: 'eatenFatG',
+    eatenCarbG: 'eatenCarbG',
+    eatenSodiumMg: 'eatenSodiumMg',
+    eatenFiberG: 'eatenFiberG'
 };
 export const MenuRecommendationItemScalarFieldEnum = {
     menuItemId: 'menuItemId',

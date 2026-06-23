@@ -2,11 +2,6 @@ import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { calculateEnergyRequirement } from "../services/energy.service.js";
 export const screeningRoutes = Router();
-screeningRoutes.get("/test", (req, res) => {
-    res.json({
-        message: "Screening route is updated",
-    });
-});
 screeningRoutes.post("/identity", async (req, res) => {
     try {
         const { fullName, age, gender, occupation } = req.body;
@@ -59,9 +54,26 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
                 message: "Client not found",
             });
         }
-        const weight = Number(weightKg);
-        const height = Number(heightCm);
-        const waist = waistCircumferenceCm ? Number(waistCircumferenceCm) : null;
+        const weight = Number(String(weightKg).replace(",", "."));
+        const height = Number(String(heightCm).replace(",", "."));
+        const waist = waistCircumferenceCm !== undefined &&
+            waistCircumferenceCm !== null &&
+            waistCircumferenceCm !== ""
+            ? Number(String(waistCircumferenceCm).replace(",", "."))
+            : null;
+        if (Number.isNaN(weight) ||
+            Number.isNaN(height) ||
+            weight <= 0 ||
+            height <= 0) {
+            return res.status(400).json({
+                message: "weightKg and heightCm must be valid numbers",
+            });
+        }
+        if (waist !== null && (Number.isNaN(waist) || waist <= 0)) {
+            return res.status(400).json({
+                message: "waistCircumferenceCm must be a valid number",
+            });
+        }
         const heightMeter = height / 100;
         const bmi = weight / (heightMeter * heightMeter);
         let bmiStatus = "Normal";
@@ -110,7 +122,9 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
                 anthropometryAssessment: true,
             },
         });
-        const obesityStatus = bmiStatus === "Obesity" || waistStatus === "High Risk"
+        const obesityStatus = bmiStatus === "Obesity" ||
+            bmiStatus === "Overweight" ||
+            waistStatus === "High Risk"
             ? "Obesity"
             : "Normal";
         await prisma.screeningResult.upsert({
@@ -167,50 +181,152 @@ screeningRoutes.get("/:screeningId/nutrition-status", async (req, res) => {
         });
     }
 });
+screeningRoutes.get("/:screeningId/blood-glucose-status", async (req, res) => {
+    try {
+        const screeningId = Number(req.params.screeningId);
+        const biochemical = await prisma.biochemicalAssessment.findUnique({
+            where: { screeningId },
+        });
+        if (!biochemical) {
+            return res.status(404).json({
+                message: "Biochemical data not found",
+            });
+        }
+        let diagnosis = "Normal";
+        let glucoseTestType = "UNKNOWN";
+        let glucoseValue = null;
+        if (biochemical.fastingGlucoseMgDl !== null) {
+            glucoseTestType = "FPG";
+            glucoseValue = biochemical.fastingGlucoseMgDl;
+            diagnosis = biochemical.glucoseStatus ?? "Normal";
+        }
+        else if (biochemical.postprandialGlucoseMgDl !== null) {
+            glucoseTestType = "TWO_HOUR";
+            glucoseValue = biochemical.postprandialGlucoseMgDl;
+            diagnosis = biochemical.glucoseStatus ?? "Normal";
+        }
+        else if (biochemical.randomGlucoseMgDl !== null) {
+            glucoseTestType = "RANDOM";
+            glucoseValue = biochemical.randomGlucoseMgDl;
+            diagnosis = biochemical.glucoseStatus ?? "Normal";
+        }
+        else if (biochemical.hba1cPercent !== null) {
+            glucoseTestType = "HBA1C";
+            glucoseValue = biochemical.hba1cPercent;
+            diagnosis = biochemical.hba1cStatus ?? "Normal";
+        }
+        return res.json({
+            message: "Blood glucose status retrieved successfully",
+            data: {
+                diagnosis,
+                glucoseTestType,
+                glucoseValue,
+                glucoseStatus: biochemical.glucoseStatus,
+                hba1cStatus: biochemical.hba1cStatus,
+                fastingGlucoseMgDl: biochemical.fastingGlucoseMgDl,
+                postprandialGlucoseMgDl: biochemical.postprandialGlucoseMgDl,
+                randomGlucoseMgDl: biochemical.randomGlucoseMgDl,
+                hba1cPercent: biochemical.hba1cPercent,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve blood glucose status",
+        });
+    }
+});
 screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
     try {
         const screeningId = Number(req.params.screeningId);
-        const { fastingGlucoseMgDl, postprandialGlucoseMgDl, randomGlucoseMgDl, hba1cPercent, } = req.body;
+        const { glucoseTestType, glucoseValue, hasClassicSymptoms } = req.body;
         const screening = await prisma.screeningSession.findUnique({
-            where: {
-                screeningId,
-            },
+            where: { screeningId },
         });
         if (!screening) {
             return res.status(404).json({
                 message: "Screening session not found",
             });
         }
-        const fpg = fastingGlucoseMgDl !== undefined ? Number(fastingGlucoseMgDl) : null;
-        const twoHourPg = postprandialGlucoseMgDl !== undefined
-            ? Number(postprandialGlucoseMgDl)
-            : null;
-        const randomPg = randomGlucoseMgDl !== undefined ? Number(randomGlucoseMgDl) : null;
-        const hba1c = hba1cPercent !== undefined ? Number(hba1cPercent) : null;
+        const allowedTypes = ["FPG", "TWO_HOUR", "RANDOM", "HBA1C"];
+        if (!allowedTypes.includes(glucoseTestType)) {
+            return res.status(400).json({
+                message: "Invalid glucoseTestType. Use FPG, TWO_HOUR, RANDOM, or HBA1C.",
+            });
+        }
+        const value = Number(glucoseValue);
+        if (Number.isNaN(value) || value <= 0) {
+            return res.status(400).json({
+                message: "glucoseValue must be a valid positive number.",
+            });
+        }
+        let fpg = null;
+        let twoHourPg = null;
+        let randomPg = null;
+        let hba1c = null;
         let glucoseStatus = "Normal";
-        let hba1cStatus = "Normal";
-        /**
-         * Basic screening logic.
-         * You can adjust this based on your clinical cut-off rule.
-         */
-        if ((fpg !== null && fpg >= 126) ||
-            (twoHourPg !== null && twoHourPg >= 200) ||
-            (randomPg !== null && randomPg >= 200)) {
-            glucoseStatus = "High";
+        let hba1cStatus = "Not Checked";
+        if (glucoseTestType === "FPG") {
+            fpg = value;
+            if (value < 70) {
+                glucoseStatus = "Low";
+            }
+            else if (value >= 126) {
+                glucoseStatus = "Diabetes Risk";
+            }
+            else if (value >= 100 && value <= 125) {
+                glucoseStatus = "Prediabetes";
+            }
+            else {
+                glucoseStatus = "Normal";
+            }
         }
-        else if (fpg !== null && fpg < 70) {
-            glucoseStatus = "Low";
+        if (glucoseTestType === "TWO_HOUR") {
+            twoHourPg = value;
+            if (value >= 200) {
+                glucoseStatus = "Diabetes Risk";
+            }
+            else if (value >= 140 && value <= 199) {
+                glucoseStatus = "Prediabetes";
+            }
+            else {
+                glucoseStatus = "Normal";
+            }
         }
-        if (hba1c !== null && hba1c >= 6.5) {
-            hba1cStatus = "High";
+        if (glucoseTestType === "RANDOM") {
+            randomPg = value;
+            if (value >= 200 && hasClassicSymptoms === true) {
+                glucoseStatus = "Diabetes Risk";
+            }
+            else if (value >= 200 && hasClassicSymptoms !== true) {
+                glucoseStatus = "Need Confirmation";
+            }
+            else if (value < 70) {
+                glucoseStatus = "Low";
+            }
+            else {
+                glucoseStatus = "Normal";
+            }
         }
-        else if (hba1c !== null && hba1c < 4) {
-            hba1cStatus = "Low";
+        if (glucoseTestType === "HBA1C") {
+            hba1c = value;
+            glucoseStatus = "Not Checked";
+            if (value >= 6.5) {
+                hba1cStatus = "Diabetes Risk";
+            }
+            else if (value >= 5.7 && value <= 6.4) {
+                hba1cStatus = "Prediabetes";
+            }
+            else if (value < 4) {
+                hba1cStatus = "Low";
+            }
+            else {
+                hba1cStatus = "Normal";
+            }
         }
         const biochemical = await prisma.biochemicalAssessment.upsert({
-            where: {
-                screeningId,
-            },
+            where: { screeningId },
             update: {
                 fastingGlucoseMgDl: fpg,
                 postprandialGlucoseMgDl: twoHourPg,
@@ -229,17 +345,45 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
                 hba1cStatus,
             },
         });
-        await prisma.screeningSession.update({
-            where: {
-                screeningId,
+        let diabetesStatus = "Normal";
+        if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
+            diabetesStatus = "Diabetes Mellitus Risk";
+        }
+        else if (glucoseStatus === "Prediabetes" ||
+            hba1cStatus === "Prediabetes") {
+            diabetesStatus = "Prediabetes Risk";
+        }
+        else if (glucoseStatus === "Need Confirmation" ||
+            hba1cStatus === "Need Confirmation") {
+            diabetesStatus = "Need Confirmation";
+        }
+        else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
+            diabetesStatus = "Low Blood Sugar";
+        }
+        await prisma.screeningResult.upsert({
+            where: { screeningId },
+            update: {
+                diabetesStatus,
             },
+            create: {
+                screeningId,
+                diabetesStatus,
+            },
+        });
+        await prisma.screeningSession.update({
+            where: { screeningId },
             data: {
                 screeningStatus: "biochemical_completed",
             },
         });
         return res.status(201).json({
             message: "Biochemical data saved successfully",
-            data: biochemical,
+            data: {
+                ...biochemical,
+                glucoseTestType,
+                glucoseValue: value,
+                finalGlucoseStatus: glucoseTestType === "HBA1C" ? hba1cStatus : glucoseStatus,
+            },
         });
     }
     catch (error) {
@@ -249,57 +393,12 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
         });
     }
 });
-screeningRoutes.get("/:screeningId/blood-glucose-status", async (req, res) => {
-    try {
-        const screeningId = Number(req.params.screeningId);
-        const biochemical = await prisma.biochemicalAssessment.findUnique({
-            where: {
-                screeningId,
-            },
-        });
-        if (!biochemical) {
-            return res.status(404).json({
-                message: "Biochemical data not found",
-            });
-        }
-        let diagnosis = "Normal";
-        if (biochemical.glucoseStatus === "High" ||
-            biochemical.hba1cStatus === "High") {
-            diagnosis = "High";
-        }
-        else if (biochemical.glucoseStatus === "Low" ||
-            biochemical.hba1cStatus === "Low") {
-            diagnosis = "Low";
-        }
-        return res.json({
-            message: "Blood glucose status retrieved successfully",
-            data: {
-                diagnosis,
-                glucoseStatus: biochemical.glucoseStatus,
-                hba1cStatus: biochemical.hba1cStatus,
-                fastingGlucoseMgDl: biochemical.fastingGlucoseMgDl,
-                postprandialGlucoseMgDl: biochemical.postprandialGlucoseMgDl,
-                randomGlucoseMgDl: biochemical.randomGlucoseMgDl,
-                hba1cPercent: biochemical.hba1cPercent,
-            },
-        });
-    }
-    catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            message: "Failed to retrieve blood glucose status",
-        });
-    }
-});
 screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
     try {
         const screeningId = Number(req.params.screeningId);
         const { systolicBp, diastolicBp, headache, chestPain, visualDisturbance, frequentUrinationNight, shortnessOfBreath, polyphagia, dizziness, polydipsia, } = req.body;
         const screening = await prisma.screeningSession.findUnique({
             where: { screeningId },
-            include: {
-                biochemicalAssessment: true,
-            },
         });
         if (!screening) {
             return res.status(404).json({
@@ -308,16 +407,29 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
         }
         const systolic = Number(systolicBp);
         const diastolic = Number(diastolicBp);
+        // 1. TAMBAHAN: Validasi Anti-NaN dan angka tidak masuk akal
+        if (Number.isNaN(systolic) ||
+            Number.isNaN(diastolic) ||
+            systolic <= 0 ||
+            diastolic <= 0) {
+            return res.status(400).json({
+                message: "systolicBp and diastolicBp must be valid positive numbers",
+            });
+        }
         let bloodPressureStatus = "Normal";
+        // 2. LOGIKA KLINIS (Sudah Benar)
         if (systolic >= 140 || diastolic >= 90) {
             bloodPressureStatus = "Hypertension Stage 2";
         }
         else if ((systolic >= 130 && systolic <= 139) ||
-            (diastolic >= 80 && diastolic <= 89)) {
+            (diastolic >= 81 && diastolic <= 89)) {
             bloodPressureStatus = "Hypertension Stage 1";
         }
-        else if (systolic >= 120 && systolic <= 129 && diastolic < 80) {
+        else if ((systolic >= 120 && systolic <= 129) || diastolic === 80) {
             bloodPressureStatus = "Elevated";
+        }
+        else {
+            bloodPressureStatus = "Normal";
         }
         const clinical = await prisma.clinicalAssessment.upsert({
             where: { screeningId },
@@ -349,24 +461,20 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
                 polydipsia: polydipsia ?? false,
             },
         });
-        let diabetesStatus = "Normal";
-        if (screening.biochemicalAssessment?.glucoseStatus === "High" ||
-            screening.biochemicalAssessment?.hba1cStatus === "High") {
-            diabetesStatus = "Diabetes Mellitus Risk";
-        }
         const hypertensionStatus = bloodPressureStatus === "Normal" || bloodPressureStatus === "Elevated"
             ? "Normal"
             : "Hypertension";
+        // 3. TAMBAHAN: Hanya update hypertensionStatus, biarkan diabetesStatus diurus oleh route Biochemical
         await prisma.screeningResult.upsert({
             where: { screeningId },
             update: {
                 hypertensionStatus,
-                diabetesStatus,
+                // diabetesStatus dihapus dari sini agar tidak menimpa data
             },
             create: {
                 screeningId,
                 hypertensionStatus,
-                diabetesStatus,
+                // Saat create pertama kali, diabetesStatus biarkan default null/kosong
             },
         });
         await prisma.screeningSession.update({
@@ -412,10 +520,22 @@ screeningRoutes.get("/:screeningId/clinical-analysis", async (req, res) => {
             screening.clinicalAssessment.bloodPressureStatus === "Elevated"
             ? "Normal"
             : "Hypertension";
+        const glucoseStatus = screening.biochemicalAssessment?.glucoseStatus;
+        const hba1cStatus = screening.biochemicalAssessment?.hba1cStatus;
         let diabetesDiagnosis = "Normal";
-        if (screening.biochemicalAssessment?.glucoseStatus === "High" ||
-            screening.biochemicalAssessment?.hba1cStatus === "High") {
+        if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
             diabetesDiagnosis = "Diabetes Mellitus Risk";
+        }
+        else if (glucoseStatus === "Prediabetes" ||
+            hba1cStatus === "Prediabetes") {
+            diabetesDiagnosis = "Prediabetes Risk";
+        }
+        else if (glucoseStatus === "Need Confirmation" ||
+            hba1cStatus === "Need Confirmation") {
+            diabetesDiagnosis = "Need Confirmation";
+        }
+        else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
+            diabetesDiagnosis = "Low Blood Sugar";
         }
         return res.json({
             message: "Clinical analysis retrieved successfully",
@@ -553,15 +673,18 @@ screeningRoutes.post("/:screeningId/physical-activity", async (req, res) => {
         const client = screening.client;
         const anthropometry = screening.anthropometryAssessment;
         const result = screening.screeningResult;
+        const diabetesStatus = result.diabetesStatus ?? "Normal";
+        const hypertensionStatus = result.hypertensionStatus ?? "Normal";
+        const obesityStatus = result.obesityStatus ?? "Normal";
         const { dailyEnergyKcal, carbohydrateGram, fatGram, proteinGram } = calculateEnergyRequirement({
             weight: anthropometry.weightKg,
             height: anthropometry.heightCm,
             age: client.age,
             gender: client.gender,
             activityLevel,
-            diabetesStatus: result.diabetesStatus,
-            hypertensionStatus: result.hypertensionStatus,
-            obesityStatus: result.obesityStatus,
+            diabetesStatus,
+            hypertensionStatus,
+            obesityStatus,
         });
         const physicalActivity = await prisma.physicalActivityAssessment.upsert({
             where: { screeningId },
@@ -741,49 +864,6 @@ screeningRoutes.get("/clients/:clientId/history", async (req, res) => {
         });
     }
 });
-screeningRoutes.post("/:clientId/new-screening", async (req, res) => {
-    try {
-        const clientId = Number(req.params.clientId);
-        if (!Number.isInteger(clientId) || clientId <= 0) {
-            return res.status(400).json({
-                message: "Valid clientId is required",
-            });
-        }
-        const client = await prisma.client.findUnique({
-            where: {
-                clientId,
-            },
-        });
-        if (!client) {
-            return res.status(404).json({
-                message: "Client not found",
-            });
-        }
-        const screening = await prisma.screeningSession.create({
-            data: {
-                clientId,
-                screeningDate: new Date(),
-                screeningStatus: "weekly_screening_started",
-            },
-        });
-        return res.status(201).json({
-            message: "Weekly screening session started successfully",
-            data: {
-                screeningId: screening.screeningId,
-                clientId: screening.clientId,
-                screeningDate: screening.screeningDate,
-                screeningStatus: screening.screeningStatus,
-            },
-        });
-    }
-    catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            message: "Failed to start weekly screening session",
-            error: error instanceof Error ? error.message : String(error),
-        });
-    }
-});
 screeningRoutes.delete("/:screeningId", async (req, res) => {
     try {
         const screeningId = Number(req.params.screeningId);
@@ -930,3 +1010,673 @@ screeningRoutes.post("/:screeningId/anthropometry-weekly", async (req, res) => {
         });
     }
 });
+screeningRoutes.get("/client/:clientId", async (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        if (Number.isNaN(clientId)) {
+            return res.status(400).json({
+                message: "Invalid clientId",
+            });
+        }
+        const client = await prisma.client.findUnique({
+            where: { clientId },
+        });
+        if (!client) {
+            return res.status(404).json({
+                message: "Client not found",
+            });
+        }
+        const screenings = await prisma.screeningSession.findMany({
+            where: { clientId },
+            orderBy: {
+                createdAt: "desc",
+            },
+            select: {
+                screeningId: true,
+                clientId: true,
+                screeningStatus: true,
+                createdAt: true,
+                screeningResult: {
+                    select: {
+                        resultId: true,
+                        diabetesStatus: true,
+                        hypertensionStatus: true,
+                        obesityStatus: true,
+                        finalScreeningCategory: true,
+                        referralRequired: true,
+                        referralReason: true,
+                        screeningSummary: true,
+                        generatedAt: true,
+                    },
+                },
+            },
+        });
+        return res.json({
+            message: "Client screening data retrieved successfully",
+            data: screenings,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve client screening data",
+        });
+    }
+});
+screeningRoutes.get("/:screeningId/detail", async (req, res) => {
+    try {
+        const screeningId = Number(req.params.screeningId);
+        if (Number.isNaN(screeningId)) {
+            return res.status(400).json({
+                message: "Invalid screeningId",
+            });
+        }
+        const screening = await prisma.screeningSession.findUnique({
+            where: { screeningId },
+            include: {
+                client: true,
+                anthropometryAssessment: true,
+                biochemicalAssessment: true,
+                clinicalAssessment: true,
+                physicalActivityAssessment: true,
+                energyRequirement: true,
+                screeningResult: true,
+            },
+        });
+        if (!screening) {
+            return res.status(404).json({
+                message: "Screening session not found",
+            });
+        }
+        return res.json({
+            message: "Screening detail retrieved successfully",
+            data: screening,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve screening detail",
+        });
+    }
+});
+screeningRoutes.get("/:screeningId/menu-recommendations", async (req, res) => {
+    try {
+        const screeningId = Number(req.params.screeningId);
+        if (Number.isNaN(screeningId)) {
+            return res.status(400).json({
+                message: "Invalid screeningId",
+            });
+        }
+        const recommendations = await prisma.menuRecommendation.findMany({
+            where: { screeningId },
+            orderBy: {
+                generatedAt: "desc",
+            },
+            include: {
+                days: {
+                    orderBy: {
+                        dayNumber: "asc",
+                    },
+                    include: {
+                        items: {
+                            orderBy: [{ mealTime: "asc" }, { categoryCode: "asc" }],
+                        },
+                    },
+                },
+            },
+        });
+        return res.json({
+            message: "Menu recommendations retrieved successfully",
+            data: recommendations,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve menu recommendations",
+        });
+    }
+});
+screeningRoutes.delete("/menu-recommendations/:menuRecommendationId", async (req, res) => {
+    try {
+        const menuRecommendationId = Number(req.params.menuRecommendationId);
+        if (Number.isNaN(menuRecommendationId)) {
+            return res.status(400).json({
+                message: "Invalid menuRecommendationId",
+            });
+        }
+        const existing = await prisma.menuRecommendation.findUnique({
+            where: { menuRecommendationId },
+        });
+        if (!existing) {
+            return res.status(404).json({
+                message: "Menu recommendation not found",
+            });
+        }
+        await prisma.menuRecommendation.delete({
+            where: { menuRecommendationId },
+        });
+        return res.json({
+            message: "Menu recommendation deleted successfully",
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to delete menu recommendation",
+        });
+    }
+});
+screeningRoutes.delete("/menu-recommendations", async (req, res) => {
+    try {
+        const { menuRecommendationIds } = req.body;
+        if (!Array.isArray(menuRecommendationIds) ||
+            menuRecommendationIds.length === 0) {
+            return res.status(400).json({
+                message: "menuRecommendationIds must be a non-empty array",
+            });
+        }
+        const ids = menuRecommendationIds.map(Number);
+        if (ids.some((id) => Number.isNaN(id))) {
+            return res.status(400).json({
+                message: "All menuRecommendationIds must be valid numbers",
+            });
+        }
+        const existingMenus = await prisma.menuRecommendation.findMany({
+            where: {
+                menuRecommendationId: {
+                    in: ids,
+                },
+            },
+            select: {
+                menuRecommendationId: true,
+                screeningId: true,
+            },
+        });
+        if (existingMenus.length === 0) {
+            return res.status(404).json({
+                message: "No selected menu recommendations found",
+            });
+        }
+        const existingIds = existingMenus.map((menu) => menu.menuRecommendationId);
+        const deleted = await prisma.menuRecommendation.deleteMany({
+            where: {
+                menuRecommendationId: {
+                    in: existingIds,
+                },
+            },
+        });
+        return res.json({
+            message: "Selected menu recommendations deleted successfully",
+            data: {
+                requestedIds: ids,
+                deletedIds: existingIds,
+                deletedCount: deleted.count,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to delete selected menu recommendations",
+        });
+    }
+});
+screeningRoutes.get("/:screeningId/daily-menus", async (req, res) => {
+    try {
+        const screeningId = Number(req.params.screeningId);
+        if (Number.isNaN(screeningId)) {
+            return res.status(400).json({
+                message: "Invalid screeningId",
+            });
+        }
+        const screening = await prisma.screeningSession.findUnique({
+            where: { screeningId },
+            select: {
+                screeningId: true,
+            },
+        });
+        if (!screening) {
+            return res.status(404).json({
+                message: "Screening session not found",
+            });
+        }
+        const recommendations = await prisma.menuRecommendation.findMany({
+            where: { screeningId },
+            orderBy: {
+                generatedAt: "desc",
+            },
+            select: {
+                menuRecommendationId: true,
+                screeningId: true,
+                dietType: true,
+                targetEnergyKcal: true,
+                targetCarbohydrateG: true,
+                targetProteinG: true,
+                targetFatG: true,
+                totalDays: true,
+                generationStatus: true,
+                generatedAt: true,
+                days: {
+                    orderBy: {
+                        dayNumber: "asc",
+                    },
+                    select: {
+                        menuDayId: true,
+                        dayNumber: true,
+                        menuDate: true,
+                        energyKcal: true,
+                        proteinG: true,
+                        fatG: true,
+                        carbG: true,
+                        sodiumMg: true,
+                        fiberG: true,
+                    },
+                },
+            },
+        });
+        return res.json({
+            message: "Daily menu list retrieved successfully",
+            data: recommendations,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve daily menu list",
+        });
+    }
+});
+screeningRoutes.get("/client/:clientId/menu-days", async (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        if (Number.isNaN(clientId)) {
+            return res.status(400).json({
+                message: "Invalid clientId",
+            });
+        }
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+        const skip = (page - 1) * limit;
+        const client = await prisma.client.findUnique({
+            where: { clientId },
+            select: {
+                clientId: true,
+                fullName: true,
+            },
+        });
+        if (!client) {
+            return res.status(404).json({
+                message: "Client not found",
+            });
+        }
+        const where = {
+            menuRecommendation: {
+                screeningSession: {
+                    clientId,
+                },
+            },
+        };
+        const [total, menuDays] = await Promise.all([
+            prisma.menuRecommendationDay.count({
+                where,
+            }),
+            prisma.menuRecommendationDay.findMany({
+                where,
+                orderBy: {
+                    menuDate: "desc",
+                },
+                skip,
+                take: limit,
+                select: {
+                    menuDayId: true,
+                    dayNumber: true,
+                    menuDate: true,
+                    energyKcal: true,
+                    proteinG: true,
+                    fatG: true,
+                    carbG: true,
+                    sodiumMg: true,
+                    fiberG: true,
+                    menuRecommendation: {
+                        select: {
+                            menuRecommendationId: true,
+                            dietType: true,
+                            targetEnergyKcal: true,
+                            generatedAt: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+        return res.json({
+            message: "Client menu days retrieved successfully",
+            data: {
+                client,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                    hasNextPage: page * limit < total,
+                    hasPreviousPage: page > 1,
+                },
+                menuDays,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve client menu days",
+        });
+    }
+});
+screeningRoutes.delete("/client/:clientId/menu-days", async (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const { menuDayIds } = req.body;
+        if (Number.isNaN(clientId)) {
+            return res.status(400).json({
+                message: "Invalid clientId",
+            });
+        }
+        if (!Array.isArray(menuDayIds) || menuDayIds.length === 0) {
+            return res.status(400).json({
+                message: "menuDayIds must be a non-empty array",
+            });
+        }
+        const ids = menuDayIds.map(Number);
+        if (ids.some((id) => Number.isNaN(id))) {
+            return res.status(400).json({
+                message: "All menuDayIds must be valid numbers",
+            });
+        }
+        const existingDays = await prisma.menuRecommendationDay.findMany({
+            where: {
+                menuDayId: {
+                    in: ids,
+                },
+                menuRecommendation: {
+                    screeningSession: {
+                        clientId,
+                    },
+                },
+            },
+            select: {
+                menuDayId: true,
+            },
+        });
+        if (existingDays.length === 0) {
+            return res.status(404).json({
+                message: "No selected menu days found for this client",
+            });
+        }
+        const existingIds = existingDays.map((day) => day.menuDayId);
+        const deleted = await prisma.menuRecommendationDay.deleteMany({
+            where: {
+                menuDayId: {
+                    in: existingIds,
+                },
+                menuRecommendation: {
+                    screeningSession: {
+                        clientId,
+                    },
+                },
+            },
+        });
+        return res.json({
+            message: "Selected menu days deleted successfully",
+            data: {
+                requestedIds: ids,
+                deletedIds: existingIds,
+                deletedCount: deleted.count,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to delete selected menu days",
+        });
+    }
+});
+screeningRoutes.get("/menu-days/:menuDayId", async (req, res) => {
+    try {
+        const menuDayId = Number(req.params.menuDayId);
+        if (Number.isNaN(menuDayId)) {
+            return res.status(400).json({
+                message: "Invalid menuDayId",
+            });
+        }
+        const menuDay = await prisma.menuRecommendationDay.findUnique({
+            where: {
+                menuDayId,
+            },
+            select: {
+                menuDayId: true,
+                menuRecommendationId: true,
+                dayNumber: true,
+                menuDate: true,
+                energyKcal: true,
+                proteinG: true,
+                fatG: true,
+                carbG: true,
+                sodiumMg: true,
+                fiberG: true,
+                menuRecommendation: {
+                    select: {
+                        menuRecommendationId: true,
+                        screeningId: true,
+                        dietType: true,
+                        targetEnergyKcal: true,
+                        targetCarbohydrateG: true,
+                        targetProteinG: true,
+                        targetFatG: true,
+                        sodiumMaxMg: true,
+                        fiberMinG: true,
+                        generatedAt: true,
+                    },
+                },
+                items: {
+                    orderBy: [
+                        {
+                            mealTime: "asc",
+                        },
+                        {
+                            categoryCode: "asc",
+                        },
+                        {
+                            foodName: "asc",
+                        },
+                    ],
+                    select: {
+                        menuItemId: true,
+                        mealTime: true,
+                        foodName: true,
+                        categoryCode: true,
+                        portion: true,
+                        urt: true,
+                        gram: true,
+                        energyKcal: true,
+                        proteinG: true,
+                        fatG: true,
+                        carbG: true,
+                        sodiumMg: true,
+                        fiberG: true,
+                        isEaten: true,
+                        eatenAt: true,
+                        userNote: true,
+                    },
+                },
+            },
+        });
+        if (!menuDay) {
+            return res.status(404).json({
+                message: "Menu day not found",
+            });
+        }
+        return res.json({
+            message: "Menu day detail retrieved successfully",
+            data: menuDay,
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve menu day detail",
+        });
+    }
+});
+screeningRoutes.get("/:screeningId/weekly-ingredient-summary", async (req, res) => {
+    try {
+        const screeningId = Number(req.params.screeningId);
+        if (!Number.isInteger(screeningId) || screeningId <= 0) {
+            return res.status(400).json({
+                message: "Valid screeningId is required",
+            });
+        }
+        const recommendation = await prisma.menuRecommendation.findFirst({
+            where: {
+                screeningId,
+            },
+            orderBy: {
+                generatedAt: "desc",
+            },
+            select: {
+                menuRecommendationId: true,
+                screeningId: true,
+                dietType: true,
+                totalDays: true,
+                generationStatus: true,
+                generatedAt: true,
+                targetEnergyKcal: true,
+                targetCarbohydrateG: true,
+                targetProteinG: true,
+                targetFatG: true,
+                sodiumMaxMg: true,
+                fiberMinG: true,
+                days: {
+                    orderBy: {
+                        dayNumber: "asc",
+                    },
+                    select: {
+                        menuDayId: true,
+                        dayNumber: true,
+                        menuDate: true,
+                        energyKcal: true,
+                        proteinG: true,
+                        fatG: true,
+                        carbG: true,
+                        sodiumMg: true,
+                        fiberG: true,
+                        items: {
+                            orderBy: {
+                                foodName: "asc",
+                            },
+                            select: {
+                                menuItemId: true,
+                                foodName: true,
+                                categoryCode: true,
+                                portion: true,
+                                urt: true,
+                                gram: true,
+                                energyKcal: true,
+                                proteinG: true,
+                                fatG: true,
+                                carbG: true,
+                                sodiumMg: true,
+                                fiberG: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        if (!recommendation) {
+            return res.status(404).json({
+                message: "Menu recommendation not found for this screening",
+            });
+        }
+        const days = recommendation.days.map((day) => {
+            const ingredientMap = new Map();
+            for (const item of day.items) {
+                const key = item.foodName;
+                const existing = ingredientMap.get(key);
+                if (existing) {
+                    existing.totalGram += item.gram ?? 0;
+                    existing.totalPortion += item.portion;
+                    if (item.urt && !existing.urtList.includes(item.urt)) {
+                        existing.urtList.push(item.urt);
+                    }
+                }
+                else {
+                    ingredientMap.set(key, {
+                        foodName: item.foodName,
+                        categoryCode: item.categoryCode,
+                        totalGram: item.gram ?? 0,
+                        totalPortion: item.portion,
+                        urtList: item.urt ? [item.urt] : [],
+                    });
+                }
+            }
+            const ingredientRecap = Array.from(ingredientMap.values()).map((ingredient) => ({
+                foodName: ingredient.foodName,
+                categoryCode: ingredient.categoryCode,
+                totalGram: round1(ingredient.totalGram),
+                totalPortion: round2(ingredient.totalPortion),
+                urt: ingredient.urtList.length > 0
+                    ? ingredient.urtList.join(", ")
+                    : null,
+            }));
+            return {
+                menuDayId: day.menuDayId,
+                dayNumber: day.dayNumber,
+                menuDate: day.menuDate,
+                nutritionSummary: {
+                    energyKcal: round1(day.energyKcal),
+                    carbohydrateG: round1(day.carbG),
+                    proteinG: round1(day.proteinG),
+                    fatG: round1(day.fatG),
+                    sodiumMg: round1(day.sodiumMg),
+                    fiberG: round1(day.fiberG),
+                },
+                ingredientRecap,
+            };
+        });
+        return res.status(200).json({
+            message: "Weekly ingredient summary retrieved successfully",
+            data: {
+                menuRecommendationId: recommendation.menuRecommendationId,
+                screeningId: recommendation.screeningId,
+                dietType: recommendation.dietType,
+                totalDays: recommendation.totalDays,
+                generationStatus: recommendation.generationStatus,
+                generatedAt: recommendation.generatedAt,
+                targetNutrition: {
+                    energyKcal: recommendation.targetEnergyKcal,
+                    carbohydrateG: recommendation.targetCarbohydrateG,
+                    proteinG: recommendation.targetProteinG,
+                    fatG: recommendation.targetFatG,
+                    sodiumMaxMg: recommendation.sodiumMaxMg,
+                    fiberMinG: recommendation.fiberMinG,
+                },
+                days,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to retrieve weekly ingredient summary",
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
+function round1(value) {
+    return Math.round(value * 10) / 10;
+}
+function round2(value) {
+    return Math.round(value * 100) / 100;
+}

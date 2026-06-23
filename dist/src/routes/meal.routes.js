@@ -351,6 +351,141 @@ mealRecommendationRoutes.post("/:screeningId/menu", async (req, res) => {
         });
     }
 });
+mealRecommendationRoutes.post("/client/:clientId/menu-weekly", async (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const { startDate } = (req.body ?? {});
+        const baseDate = startDate ? new Date(startDate) : new Date();
+        if (Number.isNaN(baseDate.getTime())) {
+            return res.status(400).json({
+                message: "Invalid startDate format. Use YYYY-MM-DD.",
+            });
+        }
+        if (!Number.isInteger(clientId) || clientId <= 0) {
+            return res.status(400).json({
+                message: "Valid clientId is required",
+            });
+        }
+        /**
+         * Ambil screening terbaru milik client.
+         * Jika model ScreeningSession punya createdAt, gunakan createdAt desc.
+         * Jika tidak punya createdAt, cukup pakai screeningId desc.
+         */
+        const latestScreening = await prisma.screeningSession.findFirst({
+            where: {
+                clientId,
+            },
+            orderBy: [
+                {
+                    screeningId: "desc",
+                },
+            ],
+            include: {
+                client: true,
+                screeningResult: true,
+                energyRequirement: true,
+            },
+        });
+        if (!latestScreening) {
+            return res.status(404).json({
+                message: "No screening session found for this client",
+                clientId,
+            });
+        }
+        if (!latestScreening.screeningResult) {
+            return res.status(400).json({
+                message: "Latest screening result has not been generated",
+                clientId,
+                screeningId: latestScreening.screeningId,
+            });
+        }
+        if (!latestScreening.energyRequirement) {
+            return res.status(400).json({
+                message: "Energy requirement has not been calculated for latest screening",
+                clientId,
+                screeningId: latestScreening.screeningId,
+            });
+        }
+        const screeningId = latestScreening.screeningId;
+        const dietType = buildDietType({
+            diabetesStatus: latestScreening.screeningResult.diabetesStatus,
+            hypertensionStatus: latestScreening.screeningResult.hypertensionStatus,
+            obesityStatus: latestScreening.screeningResult.obesityStatus,
+        });
+        const fastApiPayload = buildFastApiPayload({
+            dietType,
+            dailyEnergyKcal: latestScreening.energyRequirement.dailyEnergyKcal,
+            carbohydrateGram: latestScreening.energyRequirement.carbohydrateGram,
+            proteinGram: latestScreening.energyRequirement.proteinGram,
+            fatGram: latestScreening.energyRequirement.fatGram,
+        });
+        const weeklyHistory = {
+            usedFoodCounts: {},
+            categoryUsedFoodCounts: {},
+        };
+        const generatedMenus = [];
+        for (let day = 1; day <= 7; day++) {
+            const rotatedAllowedFoodNames = buildAllowedFoodNamesForDay(day);
+            const userExcludedFoods = [];
+            const rotatedPayload = {
+                ...fastApiPayload,
+                day_number: day,
+                allowed_food_names: rotatedAllowedFoodNames,
+                excluded_food_names: userExcludedFoods,
+                /**
+                 * Optional.
+                 * FastAPI Anda sudah punya field used_food_counts,
+                 * jadi ini aman dikirim.
+                 */
+                used_food_counts: weeklyHistory.usedFoodCounts,
+            };
+            const fastApiResponse = await fetch(`${FASTAPI_BASE_URL}/recommend-menu`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(rotatedPayload),
+            });
+            const responseBody = await fastApiResponse.json();
+            if (!fastApiResponse.ok) {
+                return res.status(422).json({
+                    message: `FastAPI failed to generate menu recommendation for day ${day}`,
+                    clientId,
+                    screeningId,
+                    day,
+                    dietType,
+                    fastApiPayload: rotatedPayload,
+                    detail: responseBody,
+                });
+            }
+            generatedMenus.push(responseBody);
+            updateWeeklyHistory(weeklyHistory, responseBody);
+        }
+        const savedWeeklyMenu = await saveGeneratedWeeklyMenu({
+            screeningId,
+            dietType,
+            fastApiPayload,
+            generatedMenus,
+            startDate: baseDate,
+        });
+        return res.status(201).json({
+            message: "Weekly menu recommendation generated from latest screening and saved successfully",
+            clientId,
+            screeningId,
+            dietType,
+            fastApiPayload,
+            weeklyHistory,
+            data: simplifyWeeklyMenu(savedWeeklyMenu),
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
 mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
     try {
         const screeningId = Number(req.params.screeningId);
@@ -403,9 +538,6 @@ mealRecommendationRoutes.post("/:screeningId/menu-weekly", async (req, res) => {
             proteinGram: screening.energyRequirement.proteinGram,
             fatGram: screening.energyRequirement.fatGram,
         });
-        // IMPORTANT:
-        // weeklyHistory must be created inside this request,
-        // not globally outside the route.
         const weeklyHistory = {
             usedFoodCounts: {},
             categoryUsedFoodCounts: {},
@@ -947,21 +1079,69 @@ mealRecommendationRoutes.patch("/items/:menuItemId/eaten", async (req, res) => {
                 message: "Menu item not found",
             });
         }
-        const updatedItem = await prisma.menuRecommendationItem.update({
-            where: {
-                menuItemId,
-            },
-            data: {
-                isEaten,
-                eatenAt: isEaten ? new Date() : null,
-                ...(userNote !== undefined && { userNote }),
-            },
+        const result = await prisma.$transaction(async (tx) => {
+            const updatedItem = await tx.menuRecommendationItem.update({
+                where: {
+                    menuItemId,
+                },
+                data: {
+                    isEaten,
+                    eatenAt: isEaten ? new Date() : null,
+                    ...(userNote !== undefined && { userNote }),
+                },
+            });
+            let multiplier = 0;
+            if (existingItem.isEaten === false && isEaten === true) {
+                multiplier = 1;
+            }
+            else if (existingItem.isEaten === true && isEaten === false) {
+                multiplier = -1;
+            }
+            if (multiplier !== 0) {
+                await tx.menuRecommendationDay.update({
+                    where: {
+                        menuDayId: existingItem.menuDayId,
+                    },
+                    data: {
+                        eatenEnergyKcal: {
+                            increment: existingItem.energyKcal * multiplier,
+                        },
+                        eatenProteinG: {
+                            increment: existingItem.proteinG * multiplier,
+                        },
+                        eatenFatG: {
+                            increment: existingItem.fatG * multiplier,
+                        },
+                        eatenCarbG: {
+                            increment: existingItem.carbG * multiplier,
+                        },
+                        eatenSodiumMg: {
+                            increment: existingItem.sodiumMg * multiplier,
+                        },
+                        eatenFiberG: {
+                            increment: existingItem.fiberG * multiplier,
+                        },
+                    },
+                });
+            }
+            const updatedDay = await tx.menuRecommendationDay.findUnique({
+                where: {
+                    menuDayId: existingItem.menuDayId,
+                },
+                include: {
+                    items: true,
+                },
+            });
+            return {
+                updatedItem,
+                updatedDay,
+            };
         });
         return res.status(200).json({
             message: isEaten
                 ? "Menu item marked as eaten"
                 : "Menu item marked as not eaten",
-            data: updatedItem,
+            data: result,
         });
     }
     catch (error) {
@@ -1192,6 +1372,188 @@ mealRecommendationRoutes.get("/clients/:clientId/menu-dates", async (req, res) =
         console.error(error);
         return res.status(500).json({
             message: "Failed to retrieve client menu dates",
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
+mealRecommendationRoutes.get("/clients/:clientId/nutrition-progress", async (req, res) => {
+    try {
+        const clientId = Number(req.params.clientId);
+        const { startDate, endDate } = req.query;
+        if (!Number.isInteger(clientId) || clientId <= 0) {
+            return res.status(400).json({
+                message: "Valid clientId is required",
+            });
+        }
+        if (typeof startDate !== "string" || typeof endDate !== "string") {
+            return res.status(400).json({
+                message: "startDate and endDate are required. Format: YYYY-MM-DD",
+            });
+        }
+        const start = new Date(`${startDate}T00:00:00.000Z`);
+        const end = new Date(`${endDate}T23:59:59.999Z`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return res.status(400).json({
+                message: "Invalid date format. Use YYYY-MM-DD",
+            });
+        }
+        const days = await prisma.menuRecommendationDay.findMany({
+            where: {
+                menuDate: {
+                    gte: start,
+                    lte: end,
+                },
+                menuRecommendation: {
+                    screeningSession: {
+                        clientId,
+                    },
+                },
+            },
+            orderBy: {
+                menuDate: "asc",
+            },
+            select: {
+                menuDayId: true,
+                dayNumber: true,
+                menuDate: true,
+                energyKcal: true,
+                proteinG: true,
+                fatG: true,
+                carbG: true,
+                sodiumMg: true,
+                fiberG: true,
+                eatenEnergyKcal: true,
+                eatenProteinG: true,
+                eatenFatG: true,
+                eatenCarbG: true,
+                eatenSodiumMg: true,
+                eatenFiberG: true,
+            },
+        });
+        const chartData = days.map((day) => {
+            const energyPercent = day.energyKcal > 0 ? (day.eatenEnergyKcal / day.energyKcal) * 100 : 0;
+            const proteinPercent = day.proteinG > 0 ? (day.eatenProteinG / day.proteinG) * 100 : 0;
+            const fatPercent = day.fatG > 0 ? (day.eatenFatG / day.fatG) * 100 : 0;
+            const carbPercent = day.carbG > 0 ? (day.eatenCarbG / day.carbG) * 100 : 0;
+            const sodiumPercent = day.sodiumMg > 0 ? (day.eatenSodiumMg / day.sodiumMg) * 100 : 0;
+            const fiberPercent = day.fiberG > 0 ? (day.eatenFiberG / day.fiberG) * 100 : 0;
+            return {
+                menuDayId: day.menuDayId,
+                dayNumber: day.dayNumber,
+                menuDate: day.menuDate,
+                energy: {
+                    target: Number(day.energyKcal.toFixed(2)),
+                    eaten: Number(day.eatenEnergyKcal.toFixed(2)),
+                    percent: Number(energyPercent.toFixed(2)),
+                    unit: "kcal",
+                },
+                protein: {
+                    target: Number(day.proteinG.toFixed(2)),
+                    eaten: Number(day.eatenProteinG.toFixed(2)),
+                    percent: Number(proteinPercent.toFixed(2)),
+                    unit: "g",
+                },
+                fat: {
+                    target: Number(day.fatG.toFixed(2)),
+                    eaten: Number(day.eatenFatG.toFixed(2)),
+                    percent: Number(fatPercent.toFixed(2)),
+                    unit: "g",
+                },
+                carbohydrate: {
+                    target: Number(day.carbG.toFixed(2)),
+                    eaten: Number(day.eatenCarbG.toFixed(2)),
+                    percent: Number(carbPercent.toFixed(2)),
+                    unit: "g",
+                },
+                sodium: {
+                    target: Number(day.sodiumMg.toFixed(2)),
+                    eaten: Number(day.eatenSodiumMg.toFixed(2)),
+                    percent: Number(sodiumPercent.toFixed(2)),
+                    unit: "mg",
+                },
+                fiber: {
+                    target: Number(day.fiberG.toFixed(2)),
+                    eaten: Number(day.eatenFiberG.toFixed(2)),
+                    percent: Number(fiberPercent.toFixed(2)),
+                    unit: "g",
+                },
+            };
+        });
+        const summary = days.reduce((acc, day) => {
+            acc.targetEnergyKcal += day.energyKcal;
+            acc.eatenEnergyKcal += day.eatenEnergyKcal;
+            acc.targetProteinG += day.proteinG;
+            acc.eatenProteinG += day.eatenProteinG;
+            acc.targetFatG += day.fatG;
+            acc.eatenFatG += day.eatenFatG;
+            acc.targetCarbG += day.carbG;
+            acc.eatenCarbG += day.eatenCarbG;
+            acc.targetSodiumMg += day.sodiumMg;
+            acc.eatenSodiumMg += day.eatenSodiumMg;
+            acc.targetFiberG += day.fiberG;
+            acc.eatenFiberG += day.eatenFiberG;
+            return acc;
+        }, {
+            targetEnergyKcal: 0,
+            eatenEnergyKcal: 0,
+            targetProteinG: 0,
+            eatenProteinG: 0,
+            targetFatG: 0,
+            eatenFatG: 0,
+            targetCarbG: 0,
+            eatenCarbG: 0,
+            targetSodiumMg: 0,
+            eatenSodiumMg: 0,
+            targetFiberG: 0,
+            eatenFiberG: 0,
+        });
+        return res.status(200).json({
+            message: "Nutrition progress retrieved successfully",
+            data: {
+                clientId,
+                startDate,
+                endDate,
+                totalDays: days.length,
+                summary: {
+                    energy: {
+                        target: Number(summary.targetEnergyKcal.toFixed(2)),
+                        eaten: Number(summary.eatenEnergyKcal.toFixed(2)),
+                        unit: "kcal",
+                    },
+                    protein: {
+                        target: Number(summary.targetProteinG.toFixed(2)),
+                        eaten: Number(summary.eatenProteinG.toFixed(2)),
+                        unit: "g",
+                    },
+                    fat: {
+                        target: Number(summary.targetFatG.toFixed(2)),
+                        eaten: Number(summary.eatenFatG.toFixed(2)),
+                        unit: "g",
+                    },
+                    carbohydrate: {
+                        target: Number(summary.targetCarbG.toFixed(2)),
+                        eaten: Number(summary.eatenCarbG.toFixed(2)),
+                        unit: "g",
+                    },
+                    sodium: {
+                        target: Number(summary.targetSodiumMg.toFixed(2)),
+                        eaten: Number(summary.eatenSodiumMg.toFixed(2)),
+                        unit: "mg",
+                    },
+                    fiber: {
+                        target: Number(summary.targetFiberG.toFixed(2)),
+                        eaten: Number(summary.eatenFiberG.toFixed(2)),
+                        unit: "g",
+                    },
+                },
+                chartData,
+            },
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Failed to get nutrition progress",
             error: error instanceof Error ? error.message : String(error),
         });
     }
