@@ -2036,3 +2036,191 @@ mealRecommendationRoutes.get(
     }
   },
 );
+
+mealRecommendationsrules.get(
+  "/:screeningId/weekly-ingredient-summary",
+  async (req, res) => {
+    try {
+      const screeningId = Number(req.params.screeningId);
+
+      if (!Number.isInteger(screeningId) || screeningId <= 0) {
+        return res.status(400).json({
+          message: "Valid screeningId is required",
+        });
+      }
+
+      const recommendation = await prisma.menuRecommendation.findFirst({
+        where: {
+          screeningId,
+        },
+        orderBy: {
+          generatedAt: "desc",
+        },
+        select: {
+          menuRecommendationId: true,
+          screeningId: true,
+          dietType: true,
+          totalDays: true,
+          generationStatus: true,
+          generatedAt: true,
+
+          targetEnergyKcal: true,
+          targetCarbohydrateG: true,
+          targetProteinG: true,
+          targetFatG: true,
+          sodiumMaxMg: true,
+          fiberMinG: true,
+
+          days: {
+            orderBy: {
+              dayNumber: "asc",
+            },
+            select: {
+              menuDayId: true,
+              dayNumber: true,
+              menuDate: true,
+
+              energyKcal: true,
+              proteinG: true,
+              fatG: true,
+              carbG: true,
+              sodiumMg: true,
+              fiberG: true,
+
+              items: {
+                orderBy: {
+                  foodName: "asc",
+                },
+                select: {
+                  menuItemId: true,
+                  foodName: true,
+                  categoryCode: true,
+                  portion: true,
+                  urt: true,
+                  gram: true,
+
+                  energyKcal: true,
+                  proteinG: true,
+                  fatG: true,
+                  carbG: true,
+                  sodiumMg: true,
+                  fiberG: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!recommendation) {
+        return res.status(404).json({
+          message: "Menu recommendation not found for this screening",
+        });
+      }
+
+      const days = recommendation.days.map((day) => {
+        const ingredientMap = new Map<
+          string,
+          {
+            foodName: string;
+            categoryCode: string;
+            totalGram: number;
+            totalPortion: number;
+            urtList: string[];
+          }
+        >();
+
+        for (const item of day.items) {
+          const key = item.foodName;
+
+          const existing = ingredientMap.get(key);
+
+          if (existing) {
+            existing.totalGram += item.gram ?? 0;
+            existing.totalPortion += item.portion;
+
+            if (item.urt && !existing.urtList.includes(item.urt)) {
+              existing.urtList.push(item.urt);
+            }
+          } else {
+            ingredientMap.set(key, {
+              foodName: item.foodName,
+              categoryCode: item.categoryCode,
+              totalGram: item.gram ?? 0,
+              totalPortion: item.portion,
+              urtList: item.urt ? [item.urt] : [],
+            });
+          }
+        }
+
+        const ingredientRecap = Array.from(ingredientMap.values()).map(
+          (ingredient) => ({
+            foodName: ingredient.foodName,
+            categoryCode: ingredient.categoryCode,
+            totalGram: round1(ingredient.totalGram),
+            totalPortion: round2(ingredient.totalPortion),
+            urt:
+              ingredient.urtList.length > 0
+                ? ingredient.urtList.join(", ")
+                : null,
+          }),
+        );
+
+        return {
+          menuDayId: day.menuDayId,
+          dayNumber: day.dayNumber,
+          menuDate: day.menuDate,
+
+          nutritionSummary: {
+            energyKcal: round1(day.energyKcal),
+            carbohydrateG: round1(day.carbG),
+            proteinG: round1(day.proteinG),
+            fatG: round1(day.fatG),
+            sodiumMg: round1(day.sodiumMg),
+            fiberG: round1(day.fiberG),
+          },
+
+          ingredientRecap,
+        };
+      });
+
+      return res.status(200).json({
+        message: "Weekly ingredient summary retrieved successfully",
+        data: {
+          menuRecommendationId: recommendation.menuRecommendationId,
+          screeningId: recommendation.screeningId,
+          dietType: recommendation.dietType,
+          totalDays: recommendation.totalDays,
+          generationStatus: recommendation.generationStatus,
+          generatedAt: recommendation.generatedAt,
+
+          targetNutrition: {
+            energyKcal: recommendation.targetEnergyKcal,
+            carbohydrateG: recommendation.targetCarbohydrateG,
+            proteinG: recommendation.targetProteinG,
+            fatG: recommendation.targetFatG,
+            sodiumMaxMg: recommendation.sodiumMaxMg,
+            fiberMinG: recommendation.fiberMinG,
+          },
+
+          days,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to retrieve weekly ingredient summary",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+);
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
