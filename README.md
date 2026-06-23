@@ -22,19 +22,6 @@ This project does **not yet include**:
 
 Those modules can be added later after the screening API is stable.
 
----
-
-## Tech Stack
-
-- Node.js
-- TypeScript
-- Express.js
-- Prisma ORM
-- PostgreSQL
-- Docker
-- Postman for API testing
-
----
 
 ## Project Structure
 
