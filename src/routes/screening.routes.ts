@@ -384,6 +384,35 @@ screeningRoutes.post("/:screeningId/biochemical", async (req, res) => {
       },
     });
 
+    let diabetesStatus = "Normal";
+
+    if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
+      diabetesStatus = "Diabetes Mellitus Risk";
+    } else if (
+      glucoseStatus === "Prediabetes" ||
+      hba1cStatus === "Prediabetes"
+    ) {
+      diabetesStatus = "Prediabetes Risk";
+    } else if (
+      glucoseStatus === "Need Confirmation" ||
+      hba1cStatus === "Need Confirmation"
+    ) {
+      diabetesStatus = "Need Confirmation";
+    } else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
+      diabetesStatus = "Low Blood Sugar";
+    }
+
+    await prisma.screeningResult.upsert({
+      where: { screeningId },
+      update: {
+        diabetesStatus,
+      },
+      create: {
+        screeningId,
+        diabetesStatus,
+      },
+    });
+
     await prisma.screeningSession.update({
       where: { screeningId },
       data: {

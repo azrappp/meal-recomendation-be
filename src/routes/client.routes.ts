@@ -174,6 +174,7 @@ clientRoutes.get("/:clientId/latest-screening", async (req, res) => {
     });
   }
 });
+
 clientRoutes.get("/:clientId/screening-history", async (req, res) => {
   try {
     const clientId = Number(req.params.clientId);
