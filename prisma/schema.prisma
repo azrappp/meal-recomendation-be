@@ -222,6 +222,10 @@ model MenuRecommendationItem {
   urt     String?
   gram    Float?
 
+  gramPerPortion Float?  @map("gram_per_portion")
+  urtQty         Float?  @map("urt_qty")
+  urtUnit        String? @map("urt_unit")
+  
   energyKcal Float @map("energy_kcal")
   proteinG   Float @map("protein_g")
   fatG       Float @map("fat_g")

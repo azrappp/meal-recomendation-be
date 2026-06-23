@@ -24,13 +24,16 @@ type FastApiMealItem = {
   category_code: string;
   portion: number;
   urt: string | null;
-  gram: number | null;
+  gram: number;
+  gram_per_portion?: number | null;
+  urt_qty?: number | null;
+  urt_unit?: string | null;
   energy_kcal: number;
   protein_g: number;
   fat_g: number;
   carb_g: number;
-  sodium_mg?: number;
-  fiber_g?: number;
+  sodium_mg?: number | null;
+  fiber_g?: number | null;
 };
 
 type FastApiMeal = {
@@ -582,11 +585,6 @@ mealRecommendationRoutes.post(
         });
       }
 
-      /**
-       * Ambil screening terbaru milik client.
-       * Jika model ScreeningSession punya createdAt, gunakan createdAt desc.
-       * Jika tidak punya createdAt, cukup pakai screeningId desc.
-       */
       const latestScreening = await prisma.screeningSession.findFirst({
         where: {
           clientId,
@@ -660,12 +658,6 @@ mealRecommendationRoutes.post(
           day_number: day,
           allowed_food_names: rotatedAllowedFoodNames,
           excluded_food_names: userExcludedFoods,
-
-          /**
-           * Optional.
-           * FastAPI Anda sudah punya field used_food_counts,
-           * jadi ini aman dikirim.
-           */
           used_food_counts: weeklyHistory.usedFoodCounts,
         };
 
@@ -995,6 +987,9 @@ async function saveGeneratedMenu(params: {
                   portion: item.portion,
                   urt: item.urt,
                   gram: item.gram,
+                  gramPerPortion: item.gram_per_portion ?? null,
+                  urtQty: item.urt_qty ?? null,
+                  urtUnit: item.urt_unit ?? null,
                   energyKcal: item.energy_kcal,
                   proteinG: item.protein_g,
                   fatG: item.fat_g,
@@ -1109,6 +1104,9 @@ async function saveGeneratedWeeklyMenu(params: {
                 portion: item.portion,
                 urt: item.urt,
                 gram: item.gram,
+                gramPerPortion: item.gram_per_portion ?? null,
+                urtQty: item.urt_qty ?? null,
+                urtUnit: item.urt_unit ?? null,
                 energyKcal: item.energy_kcal,
                 proteinG: item.protein_g,
                 fatG: item.fat_g,

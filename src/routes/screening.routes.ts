@@ -1716,18 +1716,18 @@ screeningRoutes.get("/menu-days/:menuDayId", async (req, res) => {
             mealTime: true,
             foodName: true,
             categoryCode: true,
-
             portion: true,
             urt: true,
             gram: true,
-
+            gramPerPortion: true,
+            urtQty: true,
+            urtUnit: true,
             energyKcal: true,
             proteinG: true,
             fatG: true,
             carbG: true,
             sodiumMg: true,
             fiberG: true,
-
             isEaten: true,
             eatenAt: true,
             userNote: true,
@@ -1797,7 +1797,9 @@ screeningRoutes.get(
               menuDayId: true,
               dayNumber: true,
               menuDate: true,
-
+              gramPerPortion: true,
+              urtQty: true,
+              urtUnit: true,
               energyKcal: true,
               proteinG: true,
               fatG: true,
@@ -1816,7 +1818,9 @@ screeningRoutes.get(
                   portion: true,
                   urt: true,
                   gram: true,
-
+                  gramPerPortion: true,
+                  urtQty: true,
+                  urtUnit: true,
                   energyKcal: true,
                   proteinG: true,
                   fatG: true,
@@ -1844,29 +1848,27 @@ screeningRoutes.get(
             categoryCode: string;
             totalGram: number;
             totalPortion: number;
-            urtList: string[];
+            gramPerPortion: number | null;
+            urtQty: number | null;
+            urtUnit: string | null;
           }
         >();
-
         for (const item of day.items) {
           const key = item.foodName;
-
           const existing = ingredientMap.get(key);
 
           if (existing) {
             existing.totalGram += item.gram ?? 0;
             existing.totalPortion += item.portion;
-
-            if (item.urt && !existing.urtList.includes(item.urt)) {
-              existing.urtList.push(item.urt);
-            }
           } else {
             ingredientMap.set(key, {
               foodName: item.foodName,
               categoryCode: item.categoryCode,
               totalGram: item.gram ?? 0,
               totalPortion: item.portion,
-              urtList: item.urt ? [item.urt] : [],
+              gramPerPortion: item.gramPerPortion ?? null,
+              urtQty: item.urtQty ?? null,
+              urtUnit: item.urtUnit ?? null,
             });
           }
         }
@@ -1883,17 +1885,23 @@ screeningRoutes.get(
 
             return a.foodName.localeCompare(b.foodName);
           })
-          .map((item) => ({
-            foodName: item.foodName,
-            categoryCode: item.categoryCode,
-            totalGram: round1(item.totalGram),
-            totalPortion: round2(item.totalPortion),
-            urt:
-              item.totalPortion > 0
-                ? `${round2(item.totalPortion)} porsi`
-                : null,
-          }));
+          .map((item) => {
+            const totalUrt =
+              item.gramPerPortion && item.urtQty
+                ? (item.totalGram / item.gramPerPortion) * item.urtQty
+                : null;
 
+            return {
+              foodName: item.foodName,
+              categoryCode: item.categoryCode,
+              totalGram: round1(item.totalGram),
+              totalPortion: round2(item.totalPortion),
+              urt:
+                totalUrt !== null && item.urtUnit
+                  ? `${round2(totalUrt)} ${item.urtUnit}`
+                  : `${round2(item.totalPortion)}`,
+            };
+          });
         return {
           menuDayId: day.menuDayId,
           dayNumber: day.dayNumber,
