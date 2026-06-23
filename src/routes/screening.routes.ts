@@ -147,7 +147,9 @@ screeningRoutes.post("/:clientId/anthropometry", async (req, res) => {
     });
 
     const obesityStatus =
-      bmiStatus === "Obesity" || waistStatus === "High Risk"
+      bmiStatus === "Obesity" ||
+      bmiStatus === "Overweight" ||
+      waistStatus === "High Risk"
         ? "Obesity"
         : "Normal";
     await prisma.screeningResult.upsert({
