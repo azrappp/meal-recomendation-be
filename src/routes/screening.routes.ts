@@ -1888,7 +1888,10 @@ screeningRoutes.get(
             categoryCode: item.categoryCode,
             totalGram: round1(item.totalGram),
             totalPortion: round2(item.totalPortion),
-            urt: item.urtList.length > 0 ? item.urtList.join(", ") : null,
+            urt:
+              item.totalPortion > 0
+                ? `${round2(item.totalPortion)} porsi`
+                : null,
           }));
 
         return {
