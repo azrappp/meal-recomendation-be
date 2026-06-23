@@ -1871,18 +1871,25 @@ screeningRoutes.get(
           }
         }
 
-        const ingredientRecap = Array.from(ingredientMap.values()).map(
-          (ingredient) => ({
-            foodName: ingredient.foodName,
-            categoryCode: ingredient.categoryCode,
-            totalGram: round1(ingredient.totalGram),
-            totalPortion: round2(ingredient.totalPortion),
-            urt:
-              ingredient.urtList.length > 0
-                ? ingredient.urtList.join(", ")
-                : null,
-          }),
-        );
+        const ingredientRecap = Array.from(ingredientMap.values())
+          .sort((a, b) => {
+            const categoryOrder =
+              getCategoryOrder(a.categoryCode) -
+              getCategoryOrder(b.categoryCode);
+
+            if (categoryOrder !== 0) {
+              return categoryOrder;
+            }
+
+            return a.foodName.localeCompare(b.foodName);
+          })
+          .map((item) => ({
+            foodName: item.foodName,
+            categoryCode: item.categoryCode,
+            totalGram: round1(item.totalGram),
+            totalPortion: round2(item.totalPortion),
+            urt: item.urtList.length > 0 ? item.urtList.join(", ") : null,
+          }));
 
         return {
           menuDayId: day.menuDayId,
@@ -1941,4 +1948,24 @@ function round1(value: number): number {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function getCategoryOrder(categoryCode: string): number {
+  const order: Record<string, number> = {
+    MP: 1, // Makanan Pokok
+    LH: 2, // Lauk Hewani
+    LN: 3, // Lauk Nabati
+    LP: 4, // Lauk / Protein lain, if you use it
+    SAYUR: 5, // Sayur
+    S: 5, // Alternative code for Sayur
+    BUAH: 6, // Buah
+    B: 6, // Alternative code for Buah
+    SUSU: 7, // Susu
+    GULA: 8, // Gula
+    MINYAK: 9, // Minyak / Lemak
+    OIL: 9, // Alternative code
+    L: 9, // Alternative code for Lemak
+  };
+
+  return order[categoryCode?.toUpperCase()] ?? 99;
 }
