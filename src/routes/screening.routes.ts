@@ -428,9 +428,6 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
 
     const screening = await prisma.screeningSession.findUnique({
       where: { screeningId },
-      include: {
-        biochemicalAssessment: true,
-      },
     });
 
     if (!screening) {
@@ -442,17 +439,32 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
     const systolic = Number(systolicBp);
     const diastolic = Number(diastolicBp);
 
+    // 1. TAMBAHAN: Validasi Anti-NaN dan angka tidak masuk akal
+    if (
+      Number.isNaN(systolic) ||
+      Number.isNaN(diastolic) ||
+      systolic <= 0 ||
+      diastolic <= 0
+    ) {
+      return res.status(400).json({
+        message: "systolicBp and diastolicBp must be valid positive numbers",
+      });
+    }
+
     let bloodPressureStatus = "Normal";
 
+    // 2. LOGIKA KLINIS (Sudah Benar)
     if (systolic >= 140 || diastolic >= 90) {
       bloodPressureStatus = "Hypertension Stage 2";
     } else if (
       (systolic >= 130 && systolic <= 139) ||
-      (diastolic >= 80 && diastolic <= 89)
+      (diastolic >= 81 && diastolic <= 89)
     ) {
       bloodPressureStatus = "Hypertension Stage 1";
-    } else if (systolic >= 120 && systolic <= 129 && diastolic < 80) {
+    } else if ((systolic >= 120 && systolic <= 129) || diastolic === 80) {
       bloodPressureStatus = "Elevated";
+    } else {
+      bloodPressureStatus = "Normal";
     }
 
     const clinical = await prisma.clinicalAssessment.upsert({
@@ -486,42 +498,22 @@ screeningRoutes.post("/:screeningId/clinical", async (req, res) => {
       },
     });
 
-    const glucoseStatus = screening.biochemicalAssessment?.glucoseStatus;
-    const hba1cStatus = screening.biochemicalAssessment?.hba1cStatus;
-
-    let diabetesStatus = "Normal";
-
-    if (glucoseStatus === "Diabetes Risk" || hba1cStatus === "Diabetes Risk") {
-      diabetesStatus = "Diabetes Mellitus Risk";
-    } else if (
-      glucoseStatus === "Prediabetes" ||
-      hba1cStatus === "Prediabetes"
-    ) {
-      diabetesStatus = "Prediabetes Risk";
-    } else if (
-      glucoseStatus === "Need Confirmation" ||
-      hba1cStatus === "Need Confirmation"
-    ) {
-      diabetesStatus = "Need Confirmation";
-    } else if (glucoseStatus === "Low" || hba1cStatus === "Low") {
-      diabetesStatus = "Low Blood Sugar";
-    }
-
     const hypertensionStatus =
       bloodPressureStatus === "Normal" || bloodPressureStatus === "Elevated"
         ? "Normal"
         : "Hypertension";
 
+    // 3. TAMBAHAN: Hanya update hypertensionStatus, biarkan diabetesStatus diurus oleh route Biochemical
     await prisma.screeningResult.upsert({
       where: { screeningId },
       update: {
         hypertensionStatus,
-        diabetesStatus,
+        // diabetesStatus dihapus dari sini agar tidak menimpa data
       },
       create: {
         screeningId,
         hypertensionStatus,
-        diabetesStatus,
+        // Saat create pertama kali, diabetesStatus biarkan default null/kosong
       },
     });
 
