@@ -1754,7 +1754,6 @@ screeningRoutes.get("/menu-days/:menuDayId", async (req, res) => {
     });
   }
 });
-
 screeningRoutes.get(
   "/:screeningId/weekly-ingredient-summary",
   async (req, res) => {
@@ -1838,6 +1837,7 @@ screeningRoutes.get(
       }
 
       const days = recommendation.days.map((day) => {
+        // 1. Tambahkan tipe nutrisi pada Map
         const ingredientMap = new Map<
           string,
           {
@@ -1848,8 +1848,15 @@ screeningRoutes.get(
             gramPerPortion: number | null;
             urtQty: number | null;
             urtUnit: string | null;
+            totalEnergyKcal: number;
+            totalProteinG: number;
+            totalFatG: number;
+            totalCarbG: number;
+            totalSodiumMg: number;
+            totalFiberG: number;
           }
         >();
+
         for (const item of day.items) {
           const key = item.foodName;
           const existing = ingredientMap.get(key);
@@ -1857,7 +1864,15 @@ screeningRoutes.get(
           if (existing) {
             existing.totalGram += item.gram ?? 0;
             existing.totalPortion += item.portion;
+            // 2. Akumulasikan nutrisi jika makanan sudah ada di Map
+            existing.totalEnergyKcal += item.energyKcal;
+            existing.totalProteinG += item.proteinG;
+            existing.totalFatG += item.fatG;
+            existing.totalCarbG += item.carbG;
+            existing.totalSodiumMg += item.sodiumMg;
+            existing.totalFiberG += item.fiberG;
           } else {
+            // 3. Set nilai awal nutrisi jika makanan baru ditambahkan ke Map
             ingredientMap.set(key, {
               foodName: item.foodName,
               categoryCode: item.categoryCode,
@@ -1866,6 +1881,12 @@ screeningRoutes.get(
               gramPerPortion: item.gramPerPortion ?? null,
               urtQty: item.urtQty ?? null,
               urtUnit: item.urtUnit ?? null,
+              totalEnergyKcal: item.energyKcal,
+              totalProteinG: item.proteinG,
+              totalFatG: item.fatG,
+              totalCarbG: item.carbG,
+              totalSodiumMg: item.sodiumMg,
+              totalFiberG: item.fiberG,
             });
           }
         }
@@ -1897,8 +1918,16 @@ screeningRoutes.get(
                 totalUrt !== null && item.urtUnit
                   ? `${round2(totalUrt)} ${item.urtUnit}`
                   : `${round2(item.totalPortion)}`,
+              // 4. Return hasil kalkulasi nutrisi untuk setiap ingredient
+              energyKcal: round1(item.totalEnergyKcal),
+              proteinG: round1(item.totalProteinG),
+              fatG: round1(item.totalFatG),
+              carbG: round1(item.totalCarbG),
+              sodiumMg: round1(item.totalSodiumMg),
+              fiberG: round1(item.totalFiberG),
             };
           });
+
         return {
           menuDayId: day.menuDayId,
           dayNumber: day.dayNumber,

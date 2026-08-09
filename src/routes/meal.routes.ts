@@ -329,6 +329,7 @@ function buildAllowedFoodNamesForDay(day: number): string[] {
     ...fruitRotation[index],
   ];
 }
+
 function updateWeeklyHistory(
   weeklyHistory: {
     usedFoodCounts: Record<string, number>;
